@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">时停 Demo</string>
+    <string name="accessibility_service_description">时停 Demo 使用无障碍服务检测当前前台 App 是否在你设置的受限列表中，并在命中时显示暂停提醒页。不会读取、保存或上传屏幕内容和输入内容。</string>
+</resources>
