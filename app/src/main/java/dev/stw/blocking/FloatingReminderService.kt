@@ -20,6 +20,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -147,8 +148,12 @@ class FloatingReminderService : Service() {
         hideOverlay()
         hideMini()
         overlayPackage = packageName
+        val group = DemoBlockPrefs.groupForPackage(this, packageName)
+        val overLimit = group?.let { DemoBlockPrefs.isGroupOverLimit(this, it) } == true
+        val requireTypedPurpose = group?.requireTypedPurpose == true
         val intents = DemoBlockPrefs.intents(this)
         var selectedIntent: String? = intents.firstOrNull()
+        var typedPurpose: EditText? = null
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
@@ -208,7 +213,7 @@ class FloatingReminderService : Service() {
             startActivity(home)
         }
         val cont = button("继续 5 分钟", Color.rgb(37, 99, 235), Color.WHITE) {
-            val chosen = selectedIntent
+            val chosen = if (requireTypedPurpose) typedPurpose?.text?.toString()?.trim()?.takeIf { it.isNotBlank() } else selectedIntent
             DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
             hideOverlay()
             showMini(chosen ?: "有意使用", appLabel)

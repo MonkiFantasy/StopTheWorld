@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -228,6 +229,10 @@ private fun DemoHome(
                 selectedGroupId = groups.firstOrNull()?.id ?: "default"
                 restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
                 restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+            },
+            onUpdateGroup = { groupId, name, limit, typed ->
+                DemoBlockPrefs.updateGroup(context, groupId, name, limit, typed)
+                groups = DemoBlockPrefs.groups(context)
             },
             onRemoveApp = { groupId, packageName ->
                 DemoBlockPrefs.removeAppFromGroup(context, groupId, packageName)
@@ -430,6 +435,7 @@ private fun GroupManagementCard(
     onNewGroupNameChange: (String) -> Unit,
     onCreateGroup: () -> Unit,
     onDeleteGroup: (String) -> Unit,
+    onUpdateGroup: (String, String, Int, Boolean) -> Unit,
     onRemoveApp: (String, String) -> Unit,
 ) {
     Card {
@@ -449,6 +455,9 @@ private fun GroupManagementCard(
                 Text("暂无分组。先添加一个分组，例如：学习、娱乐、社交。")
             }
             groups.forEach { group ->
+                var editName by remember(group.id, group.name) { mutableStateOf(group.name) }
+                var limitText by remember(group.id, group.dailyLimitMinutes) { mutableStateOf(if (group.dailyLimitMinutes > 0) group.dailyLimitMinutes.toString() else "") }
+                var typedPurpose by remember(group.id, group.requireTypedPurpose) { mutableStateOf(group.requireTypedPurpose) }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -457,6 +466,29 @@ private fun GroupManagementCard(
                             }
                             OutlinedButton(onClick = { onDeleteGroup(group.id) }) { Text("删除") }
                         }
+                        OutlinedTextField(
+                            value = editName,
+                            onValueChange = { editName = it },
+                            label = { Text("分组名") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = limitText,
+                            onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
+                            label = { Text("每日使用超过多少分钟后提示超时；空/0=不限") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text("自定义目的输入", fontWeight = FontWeight.SemiBold)
+                                Text("开启后，这个分组内 App 弹窗不显示目的选项，而要求用户自己输入。", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(checked = typedPurpose, onCheckedChange = { typedPurpose = it })
+                        }
+                        Button(
+                            onClick = { onUpdateGroup(group.id, editName, limitText.toIntOrNull() ?: 0, typedPurpose) },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("保存分组设置") }
                         if (group.apps.isEmpty()) {
                             Text("这个分组还没有 App。点上面的分组按钮选中后，在下方添加。")
                         } else {

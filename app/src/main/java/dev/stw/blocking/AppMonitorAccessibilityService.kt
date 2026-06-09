@@ -12,6 +12,7 @@ import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -153,8 +154,12 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         hideOverlay()
         hideMini()
         overlayPackage = packageName
+        val group = DemoBlockPrefs.groupForPackage(this, packageName)
+        val overLimit = group?.let { DemoBlockPrefs.isGroupOverLimit(this, it) } == true
+        val requireTypedPurpose = group?.requireTypedPurpose == true
         val intents = DemoBlockPrefs.intents(this)
         var selectedIntent: String? = intents.firstOrNull()
+        var typedPurpose: EditText? = null
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -174,7 +179,24 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         card.addText("时停 · Stop the World", 12f, true, Color.rgb(37, 99, 235), 0)
         card.addText("先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
         card.addText("你正在打开 $appLabel", 17f, true, Color.rgb(51, 65, 85), 4.dp)
-        card.addText("这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
+        group?.let { card.addText("分组：${it.name}", 14f, true, Color.rgb(55, 48, 163), 4.dp) }
+        if (overLimit) {
+            val limit = group?.dailyLimitMinutes ?: 0
+            card.addText("提醒超时：这个分组今日使用已超过 ${limit} 分钟", 16f, true, Color.rgb(185, 28, 28), 8.dp)
+        }
+        card.addText(if (requireTypedPurpose) "请输入这次打开的具体目的" else "这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
+
+        if (requireTypedPurpose) {
+            typedPurpose = EditText(this).apply {
+                hint = "例如：查某个资料 / 回复某个人 / 完成一个任务"
+                textSize = 14f
+                setSingleLine(false)
+                minLines = 2
+                setPadding(12.dp, 8.dp, 12.dp, 8.dp)
+                background = rounded(Color.rgb(241, 245, 249), 16.dp)
+            }
+            card.addView(typedPurpose)
+        }
 
         val chipViews = mutableListOf<TextView>()
         val chipBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -201,7 +223,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             }
             chipBox.addView(row)
         }
-        card.addView(chipBox)
+        if (!requireTypedPurpose) card.addView(chipBox)
         chipViews.forEach { view ->
             val raw = view.tag as String
             view.text = if (raw == selectedIntent) "✓ $raw" else raw
@@ -226,7 +248,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             performGlobalAction(GLOBAL_ACTION_HOME)
         }
         val cont = button("继续 5 分钟", Color.rgb(37, 99, 235), Color.WHITE) {
-            val chosen = selectedIntent
+            val chosen = if (requireTypedPurpose) typedPurpose?.text?.toString()?.trim()?.takeIf { it.isNotBlank() } else selectedIntent
             DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
             hideOverlay()
             showMini(chosen ?: "有意使用")

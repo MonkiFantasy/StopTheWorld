@@ -1,6 +1,8 @@
 package dev.stw.blocking
 
+import android.app.usage.UsageStatsManager
 import android.content.Context
+import java.util.Calendar
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -47,6 +49,26 @@ object DemoBlockPrefs {
 
     fun labelForPackage(context: Context, packageName: String): String? = restrictedApps(context).firstOrNull { it.packageName == packageName }?.label
 
+    fun groupForPackage(context: Context, packageName: String): RestrictedGroup? = groups(context).firstOrNull { group -> group.apps.any { it.packageName == packageName } }
+
+    fun groupUsageTodayMillis(context: Context, group: RestrictedGroup): Long = runCatching {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val packages = group.apps.map { it.packageName }.toSet()
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, calendar.timeInMillis, System.currentTimeMillis())
+            .orEmpty()
+            .filter { it.packageName in packages }
+            .sumOf { it.totalTimeInForeground }
+    }.getOrDefault(0L)
+
+    fun isGroupOverLimit(context: Context, group: RestrictedGroup): Boolean =
+        group.dailyLimitMinutes > 0 && groupUsageTodayMillis(context, group) >= group.dailyLimitMinutes * 60_000L
+
     fun clearRestrictedApp(context: Context) {
         setGroups(context, emptyList())
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
@@ -82,6 +104,16 @@ object DemoBlockPrefs {
         setGroups(context, groups(context).filterNot { it.id == groupId })
     }
 
+    fun updateGroup(context: Context, groupId: String, name: String, dailyLimitMinutes: Int, requireTypedPurpose: Boolean) {
+        setGroups(context, groups(context).map { group ->
+            if (group.id == groupId) group.copy(
+                name = name.trim().ifBlank { group.name },
+                dailyLimitMinutes = dailyLimitMinutes.coerceAtLeast(0),
+                requireTypedPurpose = requireTypedPurpose,
+            ) else group
+        })
+    }
+
     fun addAppToGroup(context: Context, groupId: String, packageName: String, label: String) {
         val current = groups(context).ifEmpty { listOf(RestrictedGroup("default", "默认分组", emptyList())) }
         val targetId = current.firstOrNull { it.id == groupId }?.id ?: current.first().id
@@ -110,7 +142,15 @@ object DemoBlockPrefs {
                     }
                 }
                 val id = obj.optString("id").ifBlank { newGroupId() }
-                add(RestrictedGroup(id, obj.optString("name", "分组"), apps))
+                add(
+                    RestrictedGroup(
+                        id = id,
+                        name = obj.optString("name", "分组"),
+                        apps = apps,
+                        dailyLimitMinutes = obj.optInt("dailyLimitMinutes", 0).coerceAtLeast(0),
+                        requireTypedPurpose = obj.optBoolean("requireTypedPurpose", false),
+                    ),
+                )
             }
         }
     }.getOrDefault(emptyList())
@@ -120,6 +160,8 @@ object DemoBlockPrefs {
             put(JSONObject().apply {
                 put("id", group.id)
                 put("name", group.name)
+                put("dailyLimitMinutes", group.dailyLimitMinutes)
+                put("requireTypedPurpose", group.requireTypedPurpose)
                 put("apps", JSONArray().apply {
                     group.apps.forEach { app ->
                         put(JSONObject().apply {
@@ -273,4 +315,6 @@ data class RestrictedGroup(
     val id: String,
     val name: String,
     val apps: List<RestrictedAppEntry>,
+    val dailyLimitMinutes: Int = 0,
+    val requireTypedPurpose: Boolean = false,
 )
