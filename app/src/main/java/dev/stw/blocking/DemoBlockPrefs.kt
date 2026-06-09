@@ -72,20 +72,53 @@ object DemoBlockPrefs {
 
     fun groupForPackage(context: Context, packageName: String): RestrictedGroup? = groups(context).firstOrNull { group -> group.apps.any { it.packageName == packageName } }
 
+    private fun todayStartMillis(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    fun packageUsageTodayMillis(context: Context, packageName: String): Long = runCatching {
+        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, todayStartMillis(), System.currentTimeMillis())
+            .orEmpty()
+            .filter { it.packageName == packageName }
+            .sumOf { it.totalTimeInForeground }
+    }.getOrDefault(0L)
+
     fun groupUsageTodayMillis(context: Context, group: RestrictedGroup): Long = runCatching {
-        val calendar = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
         val packages = group.apps.map { it.packageName }.toSet()
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, calendar.timeInMillis, System.currentTimeMillis())
+        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, todayStartMillis(), System.currentTimeMillis())
             .orEmpty()
             .filter { it.packageName in packages }
             .sumOf { it.totalTimeInForeground }
     }.getOrDefault(0L)
+
+    fun groupLimitSnapshot(context: Context, packageName: String, group: RestrictedGroup?): GroupLimitSnapshot {
+        val appUsed = packageUsageTodayMillis(context, packageName)
+        val groupUsed = group?.let { groupUsageTodayMillis(context, it) } ?: appUsed
+        val limit = (group?.dailyLimitMinutes ?: 0) * 60_000L
+        return GroupLimitSnapshot(
+            appUsedMillis = appUsed,
+            groupUsedMillis = groupUsed,
+            limitMillis = limit,
+            overMillis = (groupUsed - limit).coerceAtLeast(0L),
+        )
+    }
+
+    fun compactDuration(millis: Long): String {
+        val totalMinutes = (millis / 60_000L).coerceAtLeast(0L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return when {
+            hours > 0L && minutes > 0L -> "${hours}小时${minutes}分钟"
+            hours > 0L -> "${hours}小时"
+            totalMinutes > 0L -> "${totalMinutes}分钟"
+            else -> "不到1分钟"
+        }
+    }
 
     fun isGroupOverLimit(context: Context, group: RestrictedGroup): Boolean =
         group.dailyLimitMinutes > 0 && groupUsageTodayMillis(context, group) >= group.dailyLimitMinutes * 60_000L
@@ -335,6 +368,15 @@ data class DemoDebugState(
     val floatingRunning: Boolean,
 )
 
+
+data class GroupLimitSnapshot(
+    val appUsedMillis: Long,
+    val groupUsedMillis: Long,
+    val limitMillis: Long,
+    val overMillis: Long,
+) {
+    val overLimit: Boolean get() = limitMillis > 0 && groupUsedMillis >= limitMillis
+}
 
 data class RestrictedAppEntry(
     val packageName: String,

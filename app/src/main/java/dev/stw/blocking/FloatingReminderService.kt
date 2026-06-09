@@ -148,7 +148,8 @@ class FloatingReminderService : Service() {
         hideMini()
         overlayPackage = packageName
         val group = DemoBlockPrefs.groupForPackage(this, packageName)
-        val overLimit = group?.let { DemoBlockPrefs.isGroupOverLimit(this, it) } == true
+        val limitSnapshot = DemoBlockPrefs.groupLimitSnapshot(this, packageName, group)
+        val overLimit = limitSnapshot.overLimit
         val requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName)
         val intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName)
         var selectedIntent: String? = intents.firstOrNull()
@@ -166,10 +167,34 @@ class FloatingReminderService : Service() {
             elevation = 10f
         }
         root.addView(card, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-        card.addText("时停 · Stop the World", 12f, true, Color.rgb(37, 99, 235), 0)
-        card.addText("先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
+        card.addText("时停 · Stop the World", 12f, true, if (overLimit) Color.rgb(185, 28, 28) else Color.rgb(37, 99, 235), 0)
+        card.addText(if (overLimit) "已经超时" else "先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
         card.addText("你正在打开 $appLabel", 17f, true, Color.rgb(51, 65, 85), 4.dp)
-        card.addText("这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
+        group?.let { card.addText("分组：${it.name}", 14f, true, Color.rgb(55, 48, 163), 4.dp) }
+        if (overLimit) {
+            card.addText(
+                "当前应用今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.appUsedMillis)}",
+                14f,
+                false,
+                Color.rgb(71, 85, 105),
+                8.dp,
+            )
+            card.addText(
+                "分组限时 ${DemoBlockPrefs.compactDuration(limitSnapshot.limitMillis)} · 已超 ${DemoBlockPrefs.compactDuration(limitSnapshot.overMillis)}",
+                16f,
+                true,
+                Color.rgb(185, 28, 28),
+                4.dp,
+            )
+            card.addText(
+                "建议先回到桌面，或确认这次继续打开的必要性。",
+                14f,
+                false,
+                Color.rgb(100, 116, 139),
+                4.dp,
+            )
+        }
+        card.addText(if (overLimit) "如果仍要打开，这次是为了什么？" else "这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
 
         val chips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val chipViews = mutableListOf<TextView>()
