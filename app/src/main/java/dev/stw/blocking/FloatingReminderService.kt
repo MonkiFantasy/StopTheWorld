@@ -79,6 +79,12 @@ class FloatingReminderService : Service() {
     }
 
     private fun checkForeground() {
+        // Fallback monitor only. If accessibility is enabled, the event-driven accessibility
+        // overlay is the primary trigger and this service must not create a second popup.
+        if (AccessibilityStatus.isServiceEnabled(this)) {
+            DemoBlockPrefs.markSkip(this, "fallback_standby_accessibility_primary")
+            return
+        }
         if (!Settings.canDrawOverlays(this)) {
             DemoBlockPrefs.markSkip(this, "overlay_permission_missing")
             return
