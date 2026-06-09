@@ -61,9 +61,6 @@ class BlockingActivity : ComponentActivity() {
                         onReturn = { returnHome() },
                         onContinue = {
                             DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + unlockMinutes * 60_000L, null)
-                            packageManager.getLaunchIntentForPackage(packageName)
-                                ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                                ?.let { startActivity(it) }
                             finish()
                         },
                     )

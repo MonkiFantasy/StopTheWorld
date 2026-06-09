@@ -23,9 +23,7 @@
             android:name=".blocking.BlockingActivity"
             android:excludeFromRecents="true"
             android:exported="false"
-            android:launchMode="singleTask"
-            android:showWhenLocked="true"
-            android:turnScreenOn="true" />
+            android:launchMode="singleTop" />
 
         <service
             android:name=".blocking.FloatingReminderService"

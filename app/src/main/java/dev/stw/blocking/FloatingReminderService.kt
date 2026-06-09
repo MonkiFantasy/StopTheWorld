@@ -106,7 +106,7 @@ class FloatingReminderService : Service() {
         if (now - lastTriggerAt < 700L) return
         if (!DemoBlockPrefs.canShowBlock(this, fg, now, "fallback_usage_poll")) return
         lastTriggerAt = now
-        showBlockingActivity(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg, "fallback_usage_poll")
+        showOverlay(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg, "fallback_usage_poll")
     }
 
     private fun latestForegroundPackage(): String? = runCatching {
@@ -135,25 +135,6 @@ class FloatingReminderService : Service() {
     }.onFailure {
         DemoBlockPrefs.markSkip(this, "fg_error:${it.javaClass.simpleName}")
     }.getOrNull()
-
-    private fun showBlockingActivity(packageName: String, appLabel: String, source: String) {
-        val now = System.currentTimeMillis()
-        runCatching {
-            val intent = BlockingActivity.createIntent(
-                context = this,
-                packageName = packageName,
-                appLabel = appLabel,
-                delaySeconds = 3,
-                unlockMinutes = 5,
-                message = "这次打开是为了什么？",
-            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            startActivity(intent)
-            DemoBlockPrefs.markBlockShown(this, packageName, now, source)
-        }.onFailure {
-            DemoBlockPrefs.markSkip(this, "fallback_activity_error:${it.javaClass.simpleName}")
-            showOverlay(packageName, appLabel, "$source:overlay_fallback")
-        }
-    }
 
     private fun showOverlay(packageName: String, appLabel: String, source: String) {
         hideOverlay()

@@ -313,7 +313,7 @@ private fun DebugCard(debugState: DemoDebugState) {
             Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
             Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
             Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
-            Text("当前策略：检测到目标包名后优先拉起全屏阻断页，比悬浮窗在 MIUI 上更稳定；兜底监控补偿延迟事件，两路共用触发锁。")
+            Text("当前策略：无障碍负责即时事件，兜底监控负责 MIUI/OEM 延迟事件补偿；两路共用触发锁，只取包名/窗口身份，不读取文本。")
         }
     }
 }
