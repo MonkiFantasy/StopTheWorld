@@ -409,8 +409,8 @@ private fun DemoHome(
                     AppPurposeConfigCard(
                         groups = groups,
                         selectedGroupId = selectedGroupId,
-                        onSave = { packageName, options, typed ->
-                            DemoBlockPrefs.updateAppPurpose(context, packageName, options.split('，', ',', '|', '\n'), typed)
+                        onSave = { packageName, options, typed, limitMinutes ->
+                            DemoBlockPrefs.updateAppPurpose(context, packageName, options.split('，', ',', '|', '\n'), typed, limitMinutes)
                             groups = DemoBlockPrefs.groups(context)
                         },
                     )
@@ -569,7 +569,7 @@ private fun IntentConfigCard(
 private fun AppPurposeConfigCard(
     groups: List<RestrictedGroup>,
     selectedGroupId: String,
-    onSave: (String, String, Boolean?) -> Unit,
+    onSave: (String, String, Boolean?, Int?) -> Unit,
 ) {
     val apps = groups.firstOrNull { it.id == selectedGroupId }?.apps ?: groups.flatMap { it.apps }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
@@ -582,6 +582,7 @@ private fun AppPurposeConfigCard(
             apps.forEach { app ->
                 var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
                 var typed by remember(app.packageName, app.requireTypedPurpose) { mutableStateOf(app.requireTypedPurpose == true) }
+                var limitText by remember(app.packageName, app.dailyLimitMinutes) { mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "") }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(app.label, fontWeight = FontWeight.Bold)
@@ -592,6 +593,13 @@ private fun AppPurposeConfigCard(
                             label = { Text("该应用目的选项，空=使用全局目的") },
                             modifier = Modifier.fillMaxWidth(),
                         )
+                        OutlinedTextField(
+                            value = limitText,
+                            onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
+                            label = { Text("单应用每日限时（分钟，空/0=使用分组限时）") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.weight(1f)) {
                                 Text("该应用要求手动输入目的")
@@ -599,7 +607,7 @@ private fun AppPurposeConfigCard(
                             }
                             Switch(checked = typed, onCheckedChange = { typed = it })
                         }
-                        Button(onClick = { onSave(app.packageName, options, typed) }, modifier = Modifier.fillMaxWidth()) { Text("保存这个应用") }
+                        Button(onClick = { onSave(app.packageName, options, typed, limitText.toIntOrNull()?.coerceAtLeast(0) ?: 0) }, modifier = Modifier.fillMaxWidth()) { Text("保存这个应用") }
                     }
                 }
             }

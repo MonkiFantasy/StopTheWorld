@@ -14,6 +14,7 @@ import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import dev.stw.blocking.LimitSource
 
 /**
  * Primary real-time trigger for the demo.
@@ -182,14 +183,15 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         group?.let { card.addText("分组：${it.name}", 14f, true, Color.rgb(55, 48, 163), 4.dp) }
         if (overLimit) {
             card.addText(
-                "当前应用今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.appUsedMillis)}",
+                "当前应用今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.appUsedMillis)} · 分组今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.groupUsedMillis)}",
                 14f,
                 false,
                 Color.rgb(71, 85, 105),
                 8.dp,
             )
+            val limitLabel = if (limitSnapshot.source == LimitSource.APP) "单应用限时" else "分组限时"
             card.addText(
-                "分组限时 ${DemoBlockPrefs.compactDuration(limitSnapshot.limitMillis)} · 已超 ${DemoBlockPrefs.compactDuration(limitSnapshot.overMillis)}",
+                "$limitLabel ${DemoBlockPrefs.compactDuration(limitSnapshot.limitMillis)} · 已超 ${DemoBlockPrefs.compactDuration(limitSnapshot.overMillis)}",
                 16f,
                 true,
                 Color.rgb(185, 28, 28),

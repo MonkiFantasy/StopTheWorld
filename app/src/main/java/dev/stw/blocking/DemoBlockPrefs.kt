@@ -61,11 +61,11 @@ object DemoBlockPrefs {
         return app?.requireTypedPurpose ?: (groupForPackage(context, packageName)?.requireTypedPurpose == true)
     }
 
-    fun updateAppPurpose(context: Context, packageName: String, purposeOptions: List<String>, requireTypedPurpose: Boolean?) {
+    fun updateAppPurpose(context: Context, packageName: String, purposeOptions: List<String>, requireTypedPurpose: Boolean?, dailyLimitMinutes: Int? = null) {
         val cleaned = purposeOptions.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(8)
         setGroups(context, groups(context).map { group ->
             group.copy(apps = group.apps.map { app ->
-                if (app.packageName == packageName) app.copy(purposeOptions = cleaned, requireTypedPurpose = requireTypedPurpose) else app
+                if (app.packageName == packageName) app.copy(purposeOptions = cleaned, requireTypedPurpose = requireTypedPurpose, dailyLimitMinutes = dailyLimitMinutes?.coerceAtLeast(0) ?: app.dailyLimitMinutes) else app
             })
         })
     }
@@ -79,34 +79,69 @@ object DemoBlockPrefs {
         set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
-    fun packageUsageTodayMillis(context: Context, packageName: String): Long = runCatching {
+    private fun usageTodayByPackage(context: Context, packages: Set<String>): Map<String, Long> = runCatching {
+        if (packages.isEmpty()) return@runCatching emptyMap()
+        val start = todayStartMillis()
+        val now = System.currentTimeMillis()
+        val totals = mutableMapOf<String, Long>()
+        val activeSince = mutableMapOf<String, Long>()
         val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, todayStartMillis(), System.currentTimeMillis())
-            .orEmpty()
-            .filter { it.packageName == packageName }
-            .sumOf { it.totalTimeInForeground }
-    }.getOrDefault(0L)
+        val events = usm.queryEvents(start, now)
+        val event = android.app.usage.UsageEvents.Event()
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName?.takeIf { it in packages } ?: continue
+            val at = event.timeStamp.coerceIn(start, now)
+            when (event.eventType) {
+                android.app.usage.UsageEvents.Event.ACTIVITY_RESUMED,
+                android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    activeSince.putIfAbsent(pkg, at)
+                }
+                android.app.usage.UsageEvents.Event.ACTIVITY_PAUSED,
+                android.app.usage.UsageEvents.Event.ACTIVITY_STOPPED,
+                android.app.usage.UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    val since = activeSince.remove(pkg)
+                    if (since != null && at > since) totals[pkg] = (totals[pkg] ?: 0L) + (at - since)
+                }
+                android.app.usage.UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    activeSince.toMap().forEach { (activePkg, since) ->
+                        if (at > since) totals[activePkg] = (totals[activePkg] ?: 0L) + (at - since)
+                    }
+                    activeSince.clear()
+                }
+            }
+        }
+        activeSince.forEach { (pkg, since) ->
+            if (now > since) totals[pkg] = (totals[pkg] ?: 0L) + (now - since)
+        }
+        totals
+    }.getOrDefault(emptyMap())
 
-    fun groupUsageTodayMillis(context: Context, group: RestrictedGroup): Long = runCatching {
-        val packages = group.apps.map { it.packageName }.toSet()
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, todayStartMillis(), System.currentTimeMillis())
-            .orEmpty()
-            .filter { it.packageName in packages }
-            .sumOf { it.totalTimeInForeground }
-    }.getOrDefault(0L)
+    fun packageUsageTodayMillis(context: Context, packageName: String): Long =
+        usageTodayByPackage(context, setOf(packageName))[packageName] ?: 0L
 
-    fun groupLimitSnapshot(context: Context, packageName: String, group: RestrictedGroup?): GroupLimitSnapshot {
+    fun groupUsageTodayMillis(context: Context, group: RestrictedGroup): Long =
+        usageTodayByPackage(context, group.apps.map { it.packageName }.toSet()).values.sum()
+
+    fun limitSnapshot(context: Context, packageName: String, group: RestrictedGroup?): GroupLimitSnapshot {
+        val app = entryForPackage(context, packageName)
         val appUsed = packageUsageTodayMillis(context, packageName)
         val groupUsed = group?.let { groupUsageTodayMillis(context, it) } ?: appUsed
-        val limit = (group?.dailyLimitMinutes ?: 0) * 60_000L
+        val appLimit = (app?.dailyLimitMinutes ?: 0) * 60_000L
+        val groupLimit = (group?.dailyLimitMinutes ?: 0) * 60_000L
+        val useAppLimit = appLimit > 0L
+        val effectiveUsed = if (useAppLimit) appUsed else groupUsed
+        val effectiveLimit = if (useAppLimit) appLimit else groupLimit
         return GroupLimitSnapshot(
             appUsedMillis = appUsed,
             groupUsedMillis = groupUsed,
-            limitMillis = limit,
-            overMillis = (groupUsed - limit).coerceAtLeast(0L),
+            limitMillis = effectiveLimit,
+            overMillis = (effectiveUsed - effectiveLimit).coerceAtLeast(0L),
+            source = if (useAppLimit) LimitSource.APP else LimitSource.GROUP,
         )
     }
+
+    fun groupLimitSnapshot(context: Context, packageName: String, group: RestrictedGroup?): GroupLimitSnapshot = limitSnapshot(context, packageName, group)
 
     fun compactDuration(millis: Long): String {
         val totalMinutes = (millis / 60_000L).coerceAtLeast(0L)
@@ -198,7 +233,8 @@ object DemoBlockPrefs {
                                 for (k in 0 until purposeArray.length()) purposeArray.optString(k).takeIf { it.isNotBlank() }?.let { add(it) }
                             }
                             val requireTyped = if (app.has("requireTypedPurpose")) app.optBoolean("requireTypedPurpose") else null
-                            add(RestrictedAppEntry(pkg, app.optString("label", pkg), purposeOptions, requireTyped))
+                            val dailyLimit = app.optInt("dailyLimitMinutes", 0).coerceAtLeast(0)
+                            add(RestrictedAppEntry(pkg, app.optString("label", pkg), purposeOptions, requireTyped, dailyLimit))
                         }
                     }
                 }
@@ -230,6 +266,7 @@ object DemoBlockPrefs {
                             put("label", app.label)
                             put("purposeOptions", JSONArray().apply { app.purposeOptions.forEach { put(it) } })
                             app.requireTypedPurpose?.let { put("requireTypedPurpose", it) }
+                            put("dailyLimitMinutes", app.dailyLimitMinutes)
                         })
                     }
                 })
@@ -369,13 +406,17 @@ data class DemoDebugState(
 )
 
 
+enum class LimitSource { APP, GROUP }
+
 data class GroupLimitSnapshot(
     val appUsedMillis: Long,
     val groupUsedMillis: Long,
     val limitMillis: Long,
     val overMillis: Long,
+    val source: LimitSource,
 ) {
-    val overLimit: Boolean get() = limitMillis > 0 && groupUsedMillis >= limitMillis
+    val usedMillisForLimit: Long get() = if (source == LimitSource.APP) appUsedMillis else groupUsedMillis
+    val overLimit: Boolean get() = limitMillis > 0 && usedMillisForLimit >= limitMillis
 }
 
 data class RestrictedAppEntry(
@@ -383,6 +424,7 @@ data class RestrictedAppEntry(
     val label: String,
     val purposeOptions: List<String> = emptyList(),
     val requireTypedPurpose: Boolean? = null,
+    val dailyLimitMinutes: Int = 0,
 )
 
 data class RestrictedGroup(

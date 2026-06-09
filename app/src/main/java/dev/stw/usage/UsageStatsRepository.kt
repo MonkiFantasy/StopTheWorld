@@ -49,28 +49,52 @@ class UsageStatsRepository(private val context: Context) {
         val end = System.currentTimeMillis()
 
         val openCounts = mutableMapOf<String, Int>()
+        val totals = mutableMapOf<String, Long>()
+        val activeSince = mutableMapOf<String, Long>()
+        val lastSeen = mutableMapOf<String, Long>()
         val event = UsageEvents.Event()
         val events = usageStatsManager.queryEvents(start, end)
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND || event.eventType == UsageEvents.Event.ACTIVITY_RESUMED) {
-                val pkg = event.packageName ?: continue
-                openCounts[pkg] = (openCounts[pkg] ?: 0) + 1
+            val pkg = event.packageName?.takeIf { it != context.packageName } ?: continue
+            val at = event.timeStamp.coerceIn(start, end)
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    openCounts[pkg] = (openCounts[pkg] ?: 0) + 1
+                    activeSince.putIfAbsent(pkg, at)
+                    lastSeen[pkg] = at
+                }
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    val since = activeSince.remove(pkg)
+                    if (since != null && at > since) totals[pkg] = (totals[pkg] ?: 0L) + (at - since)
+                    lastSeen[pkg] = at
+                }
+                UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    activeSince.toMap().forEach { (activePkg, since) ->
+                        if (at > since) totals[activePkg] = (totals[activePkg] ?: 0L) + (at - since)
+                        lastSeen[activePkg] = at
+                    }
+                    activeSince.clear()
+                }
             }
         }
+        activeSince.forEach { (pkg, since) ->
+            if (end > since) totals[pkg] = (totals[pkg] ?: 0L) + (end - since)
+            lastSeen[pkg] = end
+        }
 
-        return usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
-            .orEmpty()
-            .groupBy { it.packageName }
-            .mapNotNull { (pkg, rows) ->
-                val used = rows.sumOf { it.totalTimeInForeground }
-                if (used <= 0L || pkg == context.packageName) return@mapNotNull null
+        return totals
+            .filterValues { it > 0L }
+            .map { (pkg, used) ->
                 UsageAppInfo(
                     packageName = pkg,
                     appLabel = labelFor(pkg),
                     usedMillis = used,
                     openCount = openCounts[pkg] ?: 0,
-                    lastTimeUsedMillis = rows.maxOf { it.lastTimeUsed },
+                    lastTimeUsedMillis = lastSeen[pkg] ?: start,
                 )
             }
             .sortedByDescending { it.usedMillis }
