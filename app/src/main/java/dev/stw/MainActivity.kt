@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.FloatingActionButton
@@ -236,7 +237,7 @@ private fun DemoHome(
         val snapshot = withContext(Dispatchers.IO) {
             HomeSnapshot(
                 hasUsageAccess = repository.hasUsageAccess(),
-                usageRows = repository.loadTodayUsage(limit = 12),
+                usageRows = repository.loadTodayUsage(limit = 200),
                 launchableApps = repository.loadLaunchableApps(),
                 groups = DemoBlockPrefs.groups(context),
                 restrictedPackage = DemoBlockPrefs.restrictedPackage(context),
@@ -282,7 +283,7 @@ private fun DemoHome(
         newGroupName = ""
     }
 
-    val tabs = listOf("首页" to "⌂", "分组" to "▤", "应用" to "◈", "测试" to "⚙")
+    val tabs = listOf("首页" to "⌂", "分组" to "▤", "统计" to "◈", "测试" to "⚙")
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -390,31 +391,19 @@ private fun DemoHome(
                         restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
                         restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
                     },
+                    usageRows = usageRows,
+                    launchableApps = launchableApps,
+                    currentPackages = groups.flatMap { it.apps }.map { it.packageName }.toSet(),
+                    onAddAppToGroup = { groupId, packageName, label ->
+                        DemoBlockPrefs.addAppToGroup(context, groupId, packageName, label)
+                        groups = DemoBlockPrefs.groups(context)
+                        selectedGroupId = groupId
+                        restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                        restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+                    },
                 )
                 2 -> {
-                    RestrictedAppPicker(
-                        usageRows = usageRows,
-                        launchableApps = launchableApps,
-                        currentPackages = groups.flatMap { it.apps }.map { it.packageName }.toSet(),
-                        selectedGroupName = groups.firstOrNull { it.id == selectedGroupId }?.name ?: "默认分组",
-                        onSelect = { packageName, label ->
-                            val target = groups.firstOrNull { it.id == selectedGroupId } ?: DemoBlockPrefs.addGroup(context, "默认分组")
-                            DemoBlockPrefs.addAppToGroup(context, target.id, packageName, label)
-                            groups = DemoBlockPrefs.groups(context)
-                            selectedGroupId = target.id
-                            restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
-                            restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
-                        },
-                    )
-                    AppPurposeConfigCard(
-                        groups = groups,
-                        selectedGroupId = selectedGroupId,
-                        onSave = { packageName, options, typed, limitMinutes ->
-                            DemoBlockPrefs.updateAppPurpose(context, packageName, options.split('，', ',', '|', '\n'), typed, limitMinutes)
-                            groups = DemoBlockPrefs.groups(context)
-                        },
-                    )
-                    UsageStatsCard(usageRows = usageRows)
+                    UsageStatsOverviewCard(usageRows = usageRows, groups = groups)
                 }
                 3 -> {
                     TestAndDebugCard(
@@ -615,6 +604,78 @@ private fun AppPurposeConfigCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun UsageStatsOverviewCard(
+    usageRows: List<UsageAppInfo>,
+    groups: List<RestrictedGroup>,
+) {
+    var mode by remember { mutableStateOf("app") }
+    val usageByPackage = remember(usageRows) { usageRows.associateBy { it.packageName } }
+    val groupRows = remember(usageRows, groups) {
+        groups.map { group ->
+            val rows = group.apps.mapNotNull { usageByPackage[it.packageName] }
+            GroupUsageRow(
+                group = group,
+                usedMillis = rows.sumOf { it.usedMillis },
+                openCount = rows.sumOf { it.openCount },
+            )
+        }.sortedByDescending { it.usedMillis }
+    }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("应用使用时间统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("按今天 0 点到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
+                AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
+            }
+            if (mode == "group") {
+                if (groupRows.isEmpty()) {
+                    Text("暂无分组。", style = MaterialTheme.typography.bodySmall)
+                }
+                groupRows.forEachIndexed { index, row ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text("${index + 1}. ${row.group.name}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        }
+                        val limitText = if (row.group.dailyLimitMinutes > 0) " · 限时 ${row.group.dailyLimitMinutes} 分钟/天" else " · 不限时"
+                        Text("${row.group.apps.size} 个 App · 打开 ${row.openCount} 次$limitText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (index != groupRows.lastIndex) HorizontalDivider()
+                }
+            } else {
+                if (usageRows.isEmpty()) {
+                    Text("暂无数据。请确认 Usage Access 已授权，然后使用几个 App 后刷新。", style = MaterialTheme.typography.bodySmall)
+                }
+                usageRows.forEachIndexed { index, row ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Text("${index + 1}. ${row.appLabel}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                        }
+                        Text("打开 ${row.openCount} 次 · 最近 ${formatTime(row.lastTimeUsedMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(row.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (index != usageRows.lastIndex) HorizontalDivider()
+                }
+            }
+        }
+    }
+}
+
+private data class GroupUsageRow(
+    val group: RestrictedGroup,
+    val usedMillis: Long,
+    val openCount: Int,
+)
+
 @Composable
 private fun UsageStatsCard(usageRows: List<UsageAppInfo>) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
@@ -649,6 +710,10 @@ private fun GroupManagementCard(
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
     onRemoveApp: (String, String) -> Unit,
+    usageRows: List<UsageAppInfo>,
+    launchableApps: List<LaunchableAppInfo>,
+    currentPackages: Set<String>,
+    onAddAppToGroup: (String, String, String) -> Unit,
 ) {
     var expandedGroupId by remember(groups, selectedGroupId) { mutableStateOf(selectedGroupId.takeIf { id -> groups.any { it.id == id } }) }
     var menuPanel by remember(expandedGroupId) { mutableStateOf("rename") }
@@ -693,6 +758,10 @@ private fun GroupManagementCard(
                     onDeleteGroup = onDeleteGroup,
                     onUpdateGroup = onUpdateGroup,
                     onRemoveApp = onRemoveApp,
+                    usageRows = usageRows,
+                    launchableApps = launchableApps,
+                    currentPackages = currentPackages,
+                    onAddAppToGroup = onAddAppToGroup,
                 )
             }
         }
@@ -712,6 +781,10 @@ private fun GroupCardItem(
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
     onRemoveApp: (String, String) -> Unit,
+    usageRows: List<UsageAppInfo>,
+    launchableApps: List<LaunchableAppInfo>,
+    currentPackages: Set<String>,
+    onAddAppToGroup: (String, String, String) -> Unit,
 ) {
     val containerColor = when {
         expanded -> Color(0xFFE8EAEE)
@@ -762,6 +835,10 @@ private fun GroupCardItem(
                     onDeleteGroup = onDeleteGroup,
                     onUpdateGroup = onUpdateGroup,
                     onRemoveApp = onRemoveApp,
+                    usageRows = usageRows,
+                    launchableApps = launchableApps,
+                    currentPackages = currentPackages,
+                    onAddAppToGroup = onAddAppToGroup,
                 )
             }
         }
@@ -777,13 +854,17 @@ private fun GroupSecondMenu(
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
     onRemoveApp: (String, String) -> Unit,
+    usageRows: List<UsageAppInfo>,
+    launchableApps: List<LaunchableAppInfo>,
+    currentPackages: Set<String>,
+    onAddAppToGroup: (String, String, String) -> Unit,
 ) {
     val items = listOf(
         "rename" to "改名",
         "limit" to "限时",
         "purpose" to "自定义目的",
         "delete" to "删除",
-        "apps" to "App移除",
+        "apps" to "App管理",
     )
     HorizontalDivider(color = Color(0xFFE4E6EA))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -798,7 +879,14 @@ private fun GroupSecondMenu(
         "limit" -> GroupLimitPanel(group = group, onUpdateGroup = onUpdateGroup)
         "purpose" -> GroupPurposePanel(group = group, onUpdateGroup = onUpdateGroup)
         "delete" -> GroupDeletePanel(group = group, onDeleteGroup = onDeleteGroup)
-        "apps" -> GroupAppsPanel(group = group, onRemoveApp = onRemoveApp)
+        "apps" -> GroupAppsPanel(
+            group = group,
+            usageRows = usageRows,
+            launchableApps = launchableApps,
+            currentPackages = currentPackages,
+            onAddAppToGroup = onAddAppToGroup,
+            onRemoveApp = onRemoveApp,
+        )
         else -> GroupRenamePanel(group = group, onUpdateGroup = onUpdateGroup)
     }
 }
@@ -890,11 +978,20 @@ private fun GroupDeletePanel(
 @Composable
 private fun GroupAppsPanel(
     group: RestrictedGroup,
+    usageRows: List<UsageAppInfo>,
+    launchableApps: List<LaunchableAppInfo>,
+    currentPackages: Set<String>,
+    onAddAppToGroup: (String, String, String) -> Unit,
     onRemoveApp: (String, String) -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text("组内 App", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Button(onClick = { showAddDialog = true }) { Text("添加 App", style = MaterialTheme.typography.labelSmall) }
+        }
         if (group.apps.isEmpty()) {
-            Text("这个分组还没有 App。到“应用”页添加。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("这个分组还没有 App。点击添加 App。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             group.apps.forEachIndexed { index, app ->
                 Row(
@@ -903,8 +1000,9 @@ private fun GroupAppsPanel(
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(app.label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
-                        Text(app.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(app.label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        val limitText = if (app.dailyLimitMinutes > 0) " · 单应用 ${app.dailyLimitMinutes} 分钟/天" else ""
+                        Text(app.packageName + limitText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     OutlinedButton(onClick = { onRemoveApp(group.id, app.packageName) }) {
                         Text("移除", style = MaterialTheme.typography.labelSmall)
@@ -913,6 +1011,29 @@ private fun GroupAppsPanel(
                 if (index != group.apps.lastIndex) HorizontalDivider(color = Color(0xFFE4E6EA))
             }
         }
+    }
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false },
+            title = { Text("添加 App 到 ${group.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .height(460.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RestrictedAppPicker(
+                        usageRows = usageRows,
+                        launchableApps = launchableApps,
+                        currentPackages = currentPackages,
+                        selectedGroupName = group.name,
+                        onSelect = { packageName, label -> onAddAppToGroup(group.id, packageName, label) },
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAddDialog = false }) { Text("完成") } },
+        )
     }
 }
 
@@ -940,6 +1061,7 @@ private fun TestAndDebugCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RestrictedAppPicker(
     usageRows: List<UsageAppInfo>,
@@ -949,60 +1071,61 @@ private fun RestrictedAppPicker(
     onSelect: (String, String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf("all") }
     var showAll by remember { mutableStateOf(false) }
     val normalizedQuery = query.trim().lowercase()
-    val filteredApps = remember(launchableApps, normalizedQuery) {
+    val usagePackages = remember(usageRows) { usageRows.map { it.packageName }.toSet() }
+    val commonApps = remember(usageRows, launchableApps) {
+        val byPackage = launchableApps.associateBy { it.packageName }
+        usageRows.map { row ->
+            byPackage[row.packageName] ?: LaunchableAppInfo(row.packageName, row.appLabel)
+        }.distinctBy { it.packageName }
+    }
+    val sourceApps = if (mode == "common") commonApps else launchableApps
+    val filteredApps = remember(sourceApps, normalizedQuery) {
         if (normalizedQuery.isBlank()) {
-            launchableApps
+            sourceApps
         } else {
-            launchableApps.filter { app ->
+            sourceApps.filter { app ->
                 app.appLabel.lowercase().contains(normalizedQuery) || app.packageName.lowercase().contains(normalizedQuery)
             }
         }
     }
-    val visibleApps = if (showAll || normalizedQuery.isNotBlank()) filteredApps else filteredApps.take(30)
+    val visibleApps = if (showAll || normalizedQuery.isNotBlank()) filteredApps else filteredApps.take(40)
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("添加目标 App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("当前添加到：$selectedGroupName。已加载 ${launchableApps.size} 个可配置应用，可搜索包名/名称。", style = MaterialTheme.typography.bodySmall)
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                label = { Text("搜索全部应用") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("当前添加到：$selectedGroupName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it; showAll = false },
+            label = { Text("搜索应用 / 包名", style = MaterialTheme.typography.labelSmall) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                AssistChip(onClick = { mode = "all"; showAll = false }, label = { Text(if (mode == "all") "✓ 全部" else "全部", style = MaterialTheme.typography.labelSmall) })
+                AssistChip(onClick = { mode = "common"; showAll = false }, label = { Text(if (mode == "common") "✓ 常用" else "常用", style = MaterialTheme.typography.labelSmall) })
+            }
+            Text("${filteredApps.size} 个", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (mode == "common" && commonApps.isEmpty()) {
+            Text("暂无常用数据，先确认 Usage Access 已授权。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        visibleApps.forEach { app ->
+            val usage = usageRows.firstOrNull { it.packageName == app.packageName }
+            AppPickRow(
+                label = app.appLabel,
+                packageName = app.packageName,
+                selected = app.packageName in currentPackages,
+                subtitle = usage?.let { "${formatDuration(it.usedMillis)} · 打开 ${it.openCount} 次" } ?: if (app.packageName in usagePackages) "今日使用过" else "全部应用",
+                onClick = { onSelect(app.packageName, app.appLabel) },
             )
-            Text("今日常用 App", fontWeight = FontWeight.SemiBold)
-            if (usageRows.isEmpty()) {
-                Text("暂无 UsageStats 数据，下面显示全部可配置应用。", style = MaterialTheme.typography.bodySmall)
-            }
-            usageRows.take(6).forEach { row ->
-                AppPickRow(
-                    label = row.appLabel,
-                    packageName = row.packageName,
-                    selected = row.packageName in currentPackages,
-                    subtitle = "${formatDuration(row.usedMillis)} · 打开 ${row.openCount} 次",
-                    onClick = { onSelect(row.packageName, row.appLabel) },
-                )
-            }
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("全部应用", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                Text("${filteredApps.size} 个", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            visibleApps.forEach { app ->
-                AppPickRow(
-                    label = app.appLabel,
-                    packageName = app.packageName,
-                    selected = app.packageName in currentPackages,
-                    subtitle = app.packageName,
-                    onClick = { onSelect(app.packageName, app.appLabel) },
-                )
-            }
-            if (filteredApps.size > visibleApps.size) {
-                TextButton(onClick = { showAll = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("显示剩余 ${filteredApps.size - visibleApps.size} 个应用")
-                }
+        }
+        if (filteredApps.size > visibleApps.size) {
+            TextButton(onClick = { showAll = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("显示剩余 ${filteredApps.size - visibleApps.size} 个应用", style = MaterialTheme.typography.labelSmall)
             }
         }
     }
@@ -1020,12 +1143,12 @@ private fun AppPickRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+            .padding(vertical = 5.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {
-        Text(if (selected) "✓ $label" else label, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        Text(packageName, style = MaterialTheme.typography.bodySmall)
+        Text(if (selected) "✓ $label" else label, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(packageName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
