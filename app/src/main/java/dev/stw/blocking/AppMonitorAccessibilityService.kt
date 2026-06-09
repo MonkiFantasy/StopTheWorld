@@ -1,6 +1,7 @@
 package dev.stw.blocking
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -128,7 +129,30 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         if (now - lastTargetTriggerAt < 700L) return
         if (!DemoBlockPrefs.canShowBlock(this, packageName, now, source)) return
         lastTargetTriggerAt = now
-        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName, source)
+        showBlockingActivity(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName, source)
+    }
+
+    private fun showBlockingActivity(packageName: String, appLabel: String, source: String) {
+        val now = System.currentTimeMillis()
+        runCatching {
+            val intent = BlockingActivity.createIntent(
+                context = this,
+                packageName = packageName,
+                appLabel = appLabel,
+                delaySeconds = 3,
+                unlockMinutes = 5,
+                message = "这次打开是为了什么？",
+            ).addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_NO_ANIMATION,
+            )
+            startActivity(intent)
+            DemoBlockPrefs.markBlockShown(this, packageName, now, source)
+        }.onFailure {
+            DemoBlockPrefs.markSkip(this, "blocking_activity_error:${it.javaClass.simpleName}")
+            showOverlay(packageName, appLabel, "$source:overlay_fallback")
+        }
     }
 
     private fun activeWindowPackageName(): String? {
