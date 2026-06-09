@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.stw.blocking.DemoBlockPrefs
+import dev.stw.blocking.DemoDebugState
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
@@ -88,6 +89,7 @@ private fun DemoHome(
     var launchableApps by remember { mutableStateOf<List<LaunchableAppInfo>>(emptyList()) }
     var restrictedPackage by remember { mutableStateOf(DemoBlockPrefs.restrictedPackage(context)) }
     var restrictedLabel by remember { mutableStateOf(DemoBlockPrefs.restrictedLabel(context)) }
+    var debugState by remember { mutableStateOf(DemoBlockPrefs.debugState(context)) }
     var refreshTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshTick) {
@@ -97,6 +99,7 @@ private fun DemoHome(
             launchableApps = repository.loadLaunchableApps().take(30)
             restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
             restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+            debugState = DemoBlockPrefs.debugState(context)
         }
     }
 
@@ -117,6 +120,8 @@ private fun DemoHome(
             onOpenAccessibilitySettings = onOpenAccessibilitySettings,
             onRefresh = { refreshTick++ },
         )
+
+        DebugCard(debugState = debugState)
 
         UsageStatsCard(usageRows = usageRows)
 
@@ -181,6 +186,21 @@ private fun StatusCard(
                 Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍服务") }
             }
             OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新统计/规则") }
+        }
+    }
+}
+
+@Composable
+private fun DebugCard(debugState: DemoDebugState) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("无障碍调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}")
+            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}")
+            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
+            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
+            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
+            Text("如果这里没有变化，说明无障碍服务没有收到窗口事件；如果检测到了目标包但没弹页，通常是后台启动 Activity 被系统拦截，本版已改为 Accessibility Overlay。")
         }
     }
 }
