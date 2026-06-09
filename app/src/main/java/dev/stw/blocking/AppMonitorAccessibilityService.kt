@@ -64,9 +64,16 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
         if (eventPackage != restricted && activePackage != restricted) return
 
-        // Do not block directly from event.packageName. Some OEMs deliver/stabilize events late;
-        // that was the cause of "target app does not pop, returning to Stop triggers it".
-        // Instead, re-check the actual active/focused window shortly after the event burst.
+        // MIUI/Chromium-style apps can report the target package before the active-window list is
+        // stable, while waiting for active-window verification can miss the instant-open moment.
+        // Use a fast event path for the exact target package, then let the shared trigger lock
+        // suppress duplicates from delayed verification/fallback polling.
+        if (eventPackage == restricted && activePackage != applicationContext.packageName) {
+            attemptBlock(restricted, "accessibility_event_fast:active=$activePackage")
+            scheduleVerifiedBlockCheck(restricted, "event=${event.eventType},eventPkg=$eventPackage,active=$activePackage")
+            return
+        }
+
         scheduleVerifiedBlockCheck(restricted, "event=${event.eventType},eventPkg=$eventPackage,active=$activePackage")
     }
 
@@ -108,15 +115,19 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             DemoBlockPrefs.markSkip(this, "accessibility_active_mismatch:$packageName")
             return
         }
+        attemptBlock(packageName, "accessibility_verified")
+    }
+
+    private fun attemptBlock(packageName: String, source: String) {
+        val now = System.currentTimeMillis()
         if (DemoBlockPrefs.unlockUntil(this, packageName) > now) {
             DemoBlockPrefs.markSkip(this, "accessibility_unlocked_until")
             return
         }
         if (overlayView != null && overlayPackage == packageName) return
-        if (now - lastTargetTriggerAt < 900L) return
+        if (now - lastTargetTriggerAt < 700L) return
+        if (!DemoBlockPrefs.tryMarkBlocked(this, packageName, now, source)) return
         lastTargetTriggerAt = now
-
-        DemoBlockPrefs.markBlocked(this, packageName, now)
         showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName)
     }
 

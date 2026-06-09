@@ -79,12 +79,9 @@ class FloatingReminderService : Service() {
     }
 
     private fun checkForeground() {
-        // Fallback monitor only. If accessibility is enabled, the event-driven accessibility
-        // overlay is the primary trigger and this service must not create a second popup.
-        if (AccessibilityStatus.isServiceEnabled(this)) {
-            DemoBlockPrefs.markSkip(this, "fallback_standby_accessibility_primary")
-            return
-        }
+        // Keep polling as a safety net even when Accessibility is enabled. A shared trigger lock
+        // below prevents double popups; this improves MIUI/OEM cases where accessibility events are
+        // delayed or the active-window list is temporarily wrong.
         if (!Settings.canDrawOverlays(this)) {
             DemoBlockPrefs.markSkip(this, "overlay_permission_missing")
             return
@@ -108,7 +105,7 @@ class FloatingReminderService : Service() {
         if (overlayView != null && overlayPackage == fg) return
         if (now - lastTriggerAt < 1_000L) return
         lastTriggerAt = now
-        DemoBlockPrefs.markBlocked(this, fg, now)
+        if (!DemoBlockPrefs.tryMarkBlocked(this, fg, now, "fallback_usage_poll")) return
         showOverlay(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg)
     }
 
@@ -321,7 +318,7 @@ class FloatingReminderService : Service() {
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val POLL_MS = 500L
+        private const val POLL_MS = 250L
         private const val NOTIFICATION_ID = 4301
         const val ACTION_STOP = "dev.stw.blocking.STOP_FLOATING_REMINDER"
     }

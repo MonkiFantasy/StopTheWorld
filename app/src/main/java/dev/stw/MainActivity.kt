@@ -296,7 +296,7 @@ private fun DebugCard(debugState: DemoDebugState) {
             Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
             Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
             Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
-            Text("当前策略：无障碍是主触发，监听窗口状态/窗口变化；只取包名/窗口身份，不读取文本。极速监控仅在无障碍未开启时兜底。")
+            Text("当前策略：无障碍负责即时事件，兜底监控负责 MIUI/OEM 延迟事件补偿；两路共用触发锁，只取包名/窗口身份，不读取文本。")
         }
     }
 }

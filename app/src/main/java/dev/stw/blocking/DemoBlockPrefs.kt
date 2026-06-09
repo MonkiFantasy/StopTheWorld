@@ -79,13 +79,31 @@ object DemoBlockPrefs {
     fun lastIntent(context: Context, packageName: String): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_LAST_INTENT_PREFIX + packageName, null)
 
-    fun markBlocked(context: Context, packageName: String, atMillis: Long = System.currentTimeMillis()) {
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+    fun tryMarkBlocked(
+        context: Context,
+        packageName: String,
+        atMillis: Long = System.currentTimeMillis(),
+        source: String = "triggered",
+        cooldownMillis: Long = 3_500L,
+    ): Boolean {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val lastPackage = prefs.getString(KEY_LAST_TRIGGER_PACKAGE, null)
+        val lastAt = prefs.getLong(KEY_LAST_TRIGGER_AT, 0L)
+        if (lastPackage == packageName && atMillis - lastAt in 0 until cooldownMillis) {
+            prefs.edit().putString(KEY_LAST_SKIP_REASON, "duplicate_suppressed:$source").apply()
+            return false
+        }
+        prefs.edit()
             .putLong(KEY_LAST_BLOCK_AT_PREFIX + packageName, atMillis)
             .putString(KEY_LAST_TRIGGER_PACKAGE, packageName)
             .putLong(KEY_LAST_TRIGGER_AT, atMillis)
-            .putString(KEY_LAST_SKIP_REASON, "triggered")
+            .putString(KEY_LAST_SKIP_REASON, source)
             .apply()
+        return true
+    }
+
+    fun markBlocked(context: Context, packageName: String, atMillis: Long = System.currentTimeMillis()) {
+        tryMarkBlocked(context, packageName, atMillis, "triggered", cooldownMillis = 0L)
     }
 
     fun lastBlockedAt(context: Context, packageName: String): Long =
