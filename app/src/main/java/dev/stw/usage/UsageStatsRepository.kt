@@ -78,8 +78,8 @@ class UsageStatsRepository(private val context: Context) {
     }
 
     fun loadLaunchableApps(): List<LaunchableAppInfo> {
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        return packageManager.queryIntentActivities(intent, 0)
+        val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val launcherApps = packageManager.queryIntentActivities(launcherIntent, 0)
             .map { resolveInfo ->
                 LaunchableAppInfo(
                     packageName = resolveInfo.activityInfo.packageName,
@@ -87,9 +87,21 @@ class UsageStatsRepository(private val context: Context) {
                         .ifBlank { resolveInfo.activityInfo.packageName },
                 )
             }
+
+        val installedApps = packageManager.getInstalledApplications(0)
+            .filter { it.enabled }
+            .map { appInfo ->
+                LaunchableAppInfo(
+                    packageName = appInfo.packageName,
+                    appLabel = packageManager.getApplicationLabel(appInfo).toString()
+                        .ifBlank { appInfo.packageName },
+                )
+            }
+
+        return (launcherApps + installedApps)
             .filter { it.packageName != context.packageName }
             .distinctBy { it.packageName }
-            .sortedBy { it.appLabel.lowercase() }
+            .sortedWith(compareBy<LaunchableAppInfo> { it.appLabel.lowercase() }.thenBy { it.packageName })
     }
 
     private fun labelFor(packageName: String): String = runCatching {

@@ -45,6 +45,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +63,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import dev.stw.blocking.AccessibilityStatus
 import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
@@ -232,7 +234,7 @@ private fun DemoHome(
             HomeSnapshot(
                 hasUsageAccess = repository.hasUsageAccess(),
                 usageRows = repository.loadTodayUsage(limit = 12),
-                launchableApps = repository.loadLaunchableApps().take(30),
+                launchableApps = repository.loadLaunchableApps(),
                 groups = DemoBlockPrefs.groups(context),
                 restrictedPackage = DemoBlockPrefs.restrictedPackage(context),
                 restrictedLabel = DemoBlockPrefs.restrictedLabel(context),
@@ -916,13 +918,34 @@ private fun RestrictedAppPicker(
     selectedGroupName: String,
     onSelect: (String, String) -> Unit,
 ) {
+    var query by remember { mutableStateOf("") }
+    var showAll by remember { mutableStateOf(false) }
+    val normalizedQuery = query.trim().lowercase()
+    val filteredApps = remember(launchableApps, normalizedQuery) {
+        if (normalizedQuery.isBlank()) {
+            launchableApps
+        } else {
+            launchableApps.filter { app ->
+                app.appLabel.lowercase().contains(normalizedQuery) || app.packageName.lowercase().contains(normalizedQuery)
+            }
+        }
+    }
+    val visibleApps = if (showAll || normalizedQuery.isNotBlank()) filteredApps else filteredApps.take(30)
+
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("添加目标 App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("当前添加到：$selectedGroupName。可从今日统计或可启动 App 中添加多个目标 App。")
+            Text("当前添加到：$selectedGroupName。已加载 ${launchableApps.size} 个可配置应用，可搜索包名/名称。", style = MaterialTheme.typography.bodySmall)
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("搜索全部应用") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
             Text("今日常用 App", fontWeight = FontWeight.SemiBold)
             if (usageRows.isEmpty()) {
-                Text("暂无 UsageStats 数据，下面显示可启动 App 列表。")
+                Text("暂无 UsageStats 数据，下面显示全部可配置应用。", style = MaterialTheme.typography.bodySmall)
             }
             usageRows.take(6).forEach { row ->
                 AppPickRow(
@@ -933,8 +956,11 @@ private fun RestrictedAppPicker(
                     onClick = { onSelect(row.packageName, row.appLabel) },
                 )
             }
-            Text("可启动 App", fontWeight = FontWeight.SemiBold)
-            launchableApps.take(10).forEach { app ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text("全部应用", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                Text("${filteredApps.size} 个", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            visibleApps.forEach { app ->
                 AppPickRow(
                     label = app.appLabel,
                     packageName = app.packageName,
@@ -942,6 +968,11 @@ private fun RestrictedAppPicker(
                     subtitle = app.packageName,
                     onClick = { onSelect(app.packageName, app.appLabel) },
                 )
+            }
+            if (filteredApps.size > visibleApps.size) {
+                TextButton(onClick = { showAll = true }, modifier = Modifier.fillMaxWidth()) {
+                    Text("显示剩余 ${filteredApps.size - visibleApps.size} 个应用")
+                }
             }
         }
     }

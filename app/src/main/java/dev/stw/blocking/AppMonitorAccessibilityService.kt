@@ -11,7 +11,6 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityWindowInfo
-import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -201,7 +200,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val chipViews = mutableListOf<TextView>()
         val chipBox = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         intents.chunked(2).forEach { rowItems ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp, 0, 2.dp); clipToPadding = false }
             rowItems.forEach { item ->
                 val chip = TextView(this).apply {
                     gravity = Gravity.CENTER
@@ -241,7 +240,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         }
         card.addView(countdownText)
 
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp, 0, 2.dp); clipToPadding = false }
         val cancel = button("不打开了", Color.rgb(239, 246, 255), Color.rgb(30, 64, 175)) {
             DemoBlockPrefs.suppressAfterCancel(this, packageName)
             hideOverlay()
@@ -253,8 +252,8 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             hideOverlay()
             showMini(chosen ?: "有意使用")
         }.apply { isEnabled = false; alpha = 0.45f }
-        row.addView(cancel, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { rightMargin = 6.dp })
-        row.addView(cont, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { leftMargin = 6.dp })
+        row.addView(cancel, LinearLayout.LayoutParams(0, 48.dp, 1f).apply { rightMargin = 6.dp })
+        row.addView(cont, LinearLayout.LayoutParams(0, 48.dp, 1f).apply { leftMargin = 6.dp })
         card.addView(row)
 
         card.addText("仅检测前台 App 包名/窗口身份，不读取文字、输入或聊天内容。", 12f, false, Color.rgb(100, 116, 139), 10.dp)
@@ -298,7 +297,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         handler.postDelayed({ hideMini() }, 5 * 60_000L)
     }
 
-    private fun startCountdown(textView: TextView, continueButton: Button) {
+    private fun startCountdown(textView: TextView, continueButton: TextView) {
         var remaining = 3
         countdownRunnable = object : Runnable {
             override fun run() {
@@ -339,11 +338,19 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         android.graphics.PixelFormat.TRANSLUCENT,
     ).apply { gravity = Gravity.CENTER; title = "Stop the World accessibility blocker" }
 
-    private fun button(text: String, bg: Int, fg: Int, onClick: () -> Unit) = Button(this).apply {
+    private fun button(text: String, bg: Int, fg: Int, onClick: () -> Unit) = TextView(this).apply {
         this.text = text
+        gravity = Gravity.CENTER
+        textSize = 14f
+        setTypeface(typeface, Typeface.BOLD)
+        includeFontPadding = false
+        minHeight = 0
+        setPadding(10.dp, 0, 10.dp, 0)
         setTextColor(fg)
-        background = rounded(bg, 16.dp)
-        setOnClickListener { onClick() }
+        background = rounded(bg, 18.dp)
+        stateListAnimator = null
+        elevation = 0f
+        setOnClickListener { if (isEnabled) onClick() }
     }
 
     private fun LinearLayout.addText(textValue: String, sizeSp: Float, bold: Boolean, color: Int, top: Int) {
