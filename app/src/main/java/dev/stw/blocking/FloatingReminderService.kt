@@ -103,16 +103,16 @@ class FloatingReminderService : Service() {
         val now = System.currentTimeMillis()
         if (DemoBlockPrefs.unlockUntil(this, fg) > now) return
         if (overlayView != null && overlayPackage == fg) return
-        if (now - lastTriggerAt < 1_000L) return
+        if (now - lastTriggerAt < 700L) return
+        if (!DemoBlockPrefs.canShowBlock(this, fg, now, "fallback_usage_poll")) return
         lastTriggerAt = now
-        if (!DemoBlockPrefs.tryMarkBlocked(this, fg, now, "fallback_usage_poll")) return
-        showOverlay(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg)
+        showOverlay(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg, "fallback_usage_poll")
     }
 
     private fun latestForegroundPackage(): String? = runCatching {
         val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
         val end = System.currentTimeMillis()
-        val start = end - 15_000L
+        val start = end - 60_000L
 
         val events = usm.queryEvents(start, end)
         val event = UsageEvents.Event()
@@ -136,7 +136,7 @@ class FloatingReminderService : Service() {
         DemoBlockPrefs.markSkip(this, "fg_error:${it.javaClass.simpleName}")
     }.getOrNull()
 
-    private fun showOverlay(packageName: String, appLabel: String) {
+    private fun showOverlay(packageName: String, appLabel: String, source: String) {
         hideOverlay()
         hideMini()
         overlayPackage = packageName
@@ -214,7 +214,12 @@ class FloatingReminderService : Service() {
         runCatching {
             windowManager?.addView(root, fullParams())
             startCountdown(countdownText, cont)
-        }.onFailure { DemoBlockPrefs.markSkip(this, "float_overlay_error:${it.javaClass.simpleName}") }
+            DemoBlockPrefs.markBlockShown(this, packageName, System.currentTimeMillis(), source)
+        }.onFailure {
+            overlayView = null
+            overlayPackage = null
+            DemoBlockPrefs.markSkip(this, "float_overlay_error:${it.javaClass.simpleName}")
+        }
     }
 
     private fun showMini(intentText: String, appLabel: String) {

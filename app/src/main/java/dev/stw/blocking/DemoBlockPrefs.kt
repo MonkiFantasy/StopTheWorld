@@ -79,7 +79,7 @@ object DemoBlockPrefs {
     fun lastIntent(context: Context, packageName: String): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_LAST_INTENT_PREFIX + packageName, null)
 
-    fun tryMarkBlocked(
+    fun canShowBlock(
         context: Context,
         packageName: String,
         atMillis: Long = System.currentTimeMillis(),
@@ -93,17 +93,25 @@ object DemoBlockPrefs {
             prefs.edit().putString(KEY_LAST_SKIP_REASON, "duplicate_suppressed:$source").apply()
             return false
         }
-        prefs.edit()
+        return true
+    }
+
+    fun markBlockShown(
+        context: Context,
+        packageName: String,
+        atMillis: Long = System.currentTimeMillis(),
+        source: String = "triggered",
+    ) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_LAST_BLOCK_AT_PREFIX + packageName, atMillis)
             .putString(KEY_LAST_TRIGGER_PACKAGE, packageName)
             .putLong(KEY_LAST_TRIGGER_AT, atMillis)
             .putString(KEY_LAST_SKIP_REASON, source)
             .apply()
-        return true
     }
 
     fun markBlocked(context: Context, packageName: String, atMillis: Long = System.currentTimeMillis()) {
-        tryMarkBlocked(context, packageName, atMillis, "triggered", cooldownMillis = 0L)
+        markBlockShown(context, packageName, atMillis, "triggered")
     }
 
     fun lastBlockedAt(context: Context, packageName: String): Long =

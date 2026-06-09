@@ -39,6 +39,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -125,9 +128,11 @@ private fun DemoHome(
     var intentText by remember { mutableStateOf(DemoBlockPrefs.intents(context).joinToString("，")) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
+    var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
     var refreshTick by remember { mutableIntStateOf(0) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(refreshTick) {
+    suspend fun refreshAll() {
         withContext(Dispatchers.IO) {
             hasUsageAccess = repository.hasUsageAccess()
             usageRows = repository.loadTodayUsage(limit = 12)
@@ -137,7 +142,19 @@ private fun DemoHome(
             debugState = DemoBlockPrefs.debugState(context)
             hasOverlayPermission = Settings.canDrawOverlays(context)
             hasAccessibility = AccessibilityStatus.isServiceEnabled(context)
+            hasFloatingRunning = DemoBlockPrefs.isFloatingRunning(context)
             intentText = DemoBlockPrefs.intents(context).joinToString("，")
+        }
+    }
+
+    LaunchedEffect(refreshTick) { refreshAll() }
+
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                refreshAll()
+                delay(1_000)
+            }
         }
     }
 
@@ -161,6 +178,7 @@ private fun DemoHome(
             onStopFloatingMonitor = onStopFloatingMonitor,
             hasOverlayPermission = hasOverlayPermission,
             hasAccessibility = hasAccessibility,
+            hasFloatingRunning = hasFloatingRunning,
             onOpenRestrictedApp = {
                 val pkg = restrictedPackage
                 val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
@@ -239,11 +257,10 @@ private fun StatusCard(
     onStopFloatingMonitor: () -> Unit,
     hasOverlayPermission: Boolean,
     hasAccessibility: Boolean,
+    hasFloatingRunning: Boolean,
     onOpenRestrictedApp: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val floatingRunning = DemoBlockPrefs.isFloatingRunning(context)
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("状态总览", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
@@ -251,11 +268,11 @@ private fun StatusCard(
                 StatusChip("Usage", hasUsageAccess)
                 StatusChip("悬浮窗", hasOverlayPermission)
                 StatusChip("无障碍", hasAccessibility)
-                StatusChip("极速监控", floatingRunning)
+                StatusChip("极速监控", hasFloatingRunning)
                 StatusChip("受限App", restrictedPackage != null)
             }
             Text("当前受限 App：${restrictedLabel ?: "未选择"}${restrictedPackage?.let { " ($it)" } ?: ""}")
-            Text("推荐：要任意状态打开都触发，请开启无障碍主触发；极速监控只做兜底。若同时开启，极速监控待命，不会双弹。")
+            Text("推荐：要更快更稳，请同时开启无障碍和兜底监控；两路信号共用触发锁，不会双弹。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
                 Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }

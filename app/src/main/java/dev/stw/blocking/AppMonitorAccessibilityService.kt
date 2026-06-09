@@ -126,9 +126,9 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         }
         if (overlayView != null && overlayPackage == packageName) return
         if (now - lastTargetTriggerAt < 700L) return
-        if (!DemoBlockPrefs.tryMarkBlocked(this, packageName, now, source)) return
+        if (!DemoBlockPrefs.canShowBlock(this, packageName, now, source)) return
         lastTargetTriggerAt = now
-        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName)
+        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName, source)
     }
 
     private fun activeWindowPackageName(): String? {
@@ -149,7 +149,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             ?.takeIf { it.isNotBlank() }
     }
 
-    private fun showOverlay(packageName: String, appLabel: String) {
+    private fun showOverlay(packageName: String, appLabel: String, source: String) {
         hideOverlay()
         hideMini()
         overlayPackage = packageName
@@ -240,7 +240,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         runCatching {
             windowManager?.addView(root, fullParams())
             startCountdown(countdownText, cont)
-            DemoBlockPrefs.markSkip(this, "accessibility_overlay_added:$packageName")
+            DemoBlockPrefs.markBlockShown(this, packageName, System.currentTimeMillis(), source)
         }.onFailure { error ->
             overlayView = null
             overlayPackage = null
