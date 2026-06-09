@@ -10,6 +10,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -35,6 +36,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private var lastTargetTriggerAt = 0L
     private var lastSeenPackage: String? = null
     private var lastSeenWriteAt = 0L
+    private var pendingCheck: Runnable? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -48,21 +50,64 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             event.eventType != AccessibilityEvent.TYPE_WINDOWS_CHANGED
         ) return
 
-        val packageName = resolvePackageName(event) ?: return
+        val eventPackage = event.packageName?.toString()?.takeIf { it.isNotBlank() }
+        val activePackage = activeWindowPackageName()
+        val seenPackage = activePackage ?: eventPackage ?: return
         val now = System.currentTimeMillis()
 
-        if (packageName != lastSeenPackage && now - lastSeenWriteAt > 350L) {
+        if (seenPackage != lastSeenPackage && now - lastSeenWriteAt > 250L) {
+            lastSeenPackage = seenPackage
+            lastSeenWriteAt = now
+            DemoBlockPrefs.markSeen(this, seenPackage, now)
+        }
+
+        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
+        if (eventPackage != restricted && activePackage != restricted) return
+
+        // Do not block directly from event.packageName. Some OEMs deliver/stabilize events late;
+        // that was the cause of "target app does not pop, returning to Stop triggers it".
+        // Instead, re-check the actual active/focused window shortly after the event burst.
+        scheduleVerifiedBlockCheck(restricted, "event=${event.eventType},eventPkg=$eventPackage,active=$activePackage")
+    }
+
+    override fun onInterrupt() = Unit
+
+    override fun onDestroy() {
+        hideOverlay()
+        hideMini()
+        DemoBlockPrefs.markSkip(this, "accessibility_primary_destroyed")
+        super.onDestroy()
+    }
+
+    private fun scheduleVerifiedBlockCheck(restricted: String, reason: String) {
+        pendingCheck?.let { handler.removeCallbacks(it) }
+        pendingCheck = Runnable { verifyAndBlock(restricted, reason) }
+        handler.postDelayed(pendingCheck!!, 120L)
+    }
+
+    private fun verifyAndBlock(restricted: String, reason: String) {
+        pendingCheck = null
+        val packageName = activeWindowPackageName()
+        val now = System.currentTimeMillis()
+
+        if (packageName != null && packageName != lastSeenPackage && now - lastSeenWriteAt > 250L) {
             lastSeenPackage = packageName
             lastSeenWriteAt = now
             DemoBlockPrefs.markSeen(this, packageName, now)
         }
 
-        if (packageName == applicationContext.packageName || packageName.isSystemTransientPackage()) {
+        if (packageName == null) {
+            DemoBlockPrefs.markSkip(this, "accessibility_active_null:$reason")
             return
         }
-
-        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
-        if (packageName != restricted) return
+        if (packageName == applicationContext.packageName || packageName.isSystemTransientPackage()) {
+            DemoBlockPrefs.markSkip(this, "accessibility_active_not_target:$packageName")
+            return
+        }
+        if (packageName != restricted) {
+            DemoBlockPrefs.markSkip(this, "accessibility_active_mismatch:$packageName")
+            return
+        }
         if (DemoBlockPrefs.unlockUntil(this, packageName) > now) {
             DemoBlockPrefs.markSkip(this, "accessibility_unlocked_until")
             return
@@ -75,20 +120,22 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName)
     }
 
-    override fun onInterrupt() = Unit
+    private fun activeWindowPackageName(): String? {
+        // We intentionally read only window package identity. We do not traverse child nodes,
+        // read text, descriptions, input, or chat/content data.
+        runCatching {
+            windows
+                .orEmpty()
+                .asSequence()
+                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                .sortedByDescending { if (it.isActive) 2 else if (it.isFocused) 1 else 0 }
+                .mapNotNull { it.root?.packageName?.toString()?.takeIf { pkg -> pkg.isNotBlank() } }
+                .firstOrNull()
+        }.getOrNull()?.let { return it }
 
-    override fun onDestroy() {
-        hideOverlay()
-        hideMini()
-        DemoBlockPrefs.markSkip(this, "accessibility_primary_destroyed")
-        super.onDestroy()
-    }
-
-    private fun resolvePackageName(event: AccessibilityEvent): String? {
-        event.packageName?.toString()?.takeIf { it.isNotBlank() }?.let { return it }
-        // We intentionally read only the active window package name. We do not traverse nodes,
-        // read text, descriptions, input, or child content.
-        return runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()?.takeIf { it.isNotBlank() }
+        return runCatching { rootInActiveWindow?.packageName?.toString() }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
     }
 
     private fun showOverlay(packageName: String, appLabel: String) {
@@ -236,6 +283,8 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     }
 
     private fun hideOverlay() {
+        pendingCheck?.let { handler.removeCallbacks(it) }
+        pendingCheck = null
         countdownRunnable?.let { handler.removeCallbacks(it) }
         countdownRunnable = null
         overlayView?.let { runCatching { windowManager?.removeView(it) } }
