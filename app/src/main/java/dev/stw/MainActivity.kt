@@ -1,6 +1,8 @@
 package dev.stw
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -26,6 +28,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
+import dev.stw.blocking.FloatingReminderService
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
@@ -57,6 +61,21 @@ class MainActivity : ComponentActivity() {
             StopTheWorldDemoApp(
                 onOpenUsageAccess = { startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)) },
                 onOpenAccessibilitySettings = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                onOpenOverlaySettings = {
+                    startActivity(
+                        Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName"),
+                        ),
+                    )
+                },
+                onStartFloatingMonitor = {
+                    val service = Intent(this, FloatingReminderService::class.java)
+                    if (Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
+                },
+                onStopFloatingMonitor = {
+                    stopService(Intent(this, FloatingReminderService::class.java))
+                },
             )
         }
     }
@@ -66,12 +85,18 @@ class MainActivity : ComponentActivity() {
 fun StopTheWorldDemoApp(
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    onOpenOverlaySettings: () -> Unit,
+    onStartFloatingMonitor: () -> Unit,
+    onStopFloatingMonitor: () -> Unit,
 ) {
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             DemoHome(
                 onOpenUsageAccess = onOpenUsageAccess,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                onOpenOverlaySettings = onOpenOverlaySettings,
+                onStartFloatingMonitor = onStartFloatingMonitor,
+                onStopFloatingMonitor = onStopFloatingMonitor,
             )
         }
     }
@@ -81,6 +106,9 @@ fun StopTheWorldDemoApp(
 private fun DemoHome(
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    onOpenOverlaySettings: () -> Unit,
+    onStartFloatingMonitor: () -> Unit,
+    onStopFloatingMonitor: () -> Unit,
 ) {
     val context = LocalContext.current
     val repository = remember { UsageStatsRepository(context.applicationContext) }
@@ -90,6 +118,8 @@ private fun DemoHome(
     var restrictedPackage by remember { mutableStateOf(DemoBlockPrefs.restrictedPackage(context)) }
     var restrictedLabel by remember { mutableStateOf(DemoBlockPrefs.restrictedLabel(context)) }
     var debugState by remember { mutableStateOf(DemoBlockPrefs.debugState(context)) }
+    var intentText by remember { mutableStateOf(DemoBlockPrefs.intents(context).joinToString("，")) }
+    var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var refreshTick by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refreshTick) {
@@ -100,6 +130,8 @@ private fun DemoHome(
             restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
             restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
             debugState = DemoBlockPrefs.debugState(context)
+            hasOverlayPermission = Settings.canDrawOverlays(context)
+            intentText = DemoBlockPrefs.intents(context).joinToString("，")
         }
     }
 
@@ -118,10 +150,23 @@ private fun DemoHome(
             restrictedPackage = restrictedPackage,
             onOpenUsageAccess = onOpenUsageAccess,
             onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+            onOpenOverlaySettings = onOpenOverlaySettings,
+            onStartFloatingMonitor = onStartFloatingMonitor,
+            onStopFloatingMonitor = onStopFloatingMonitor,
+            hasOverlayPermission = hasOverlayPermission,
             onRefresh = { refreshTick++ },
         )
 
         DebugCard(debugState = debugState)
+
+        IntentConfigCard(
+            intentText = intentText,
+            onIntentTextChange = { intentText = it },
+            onSave = {
+                DemoBlockPrefs.setIntents(context, intentText.split('，', ',', '|', '\n'))
+                intentText = DemoBlockPrefs.intents(context).joinToString("，")
+            },
+        )
 
         UsageStatsCard(usageRows = usageRows)
 
@@ -173,18 +218,28 @@ private fun StatusCard(
     restrictedPackage: String?,
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
+    onOpenOverlaySettings: () -> Unit,
+    onStartFloatingMonitor: () -> Unit,
+    onStopFloatingMonitor: () -> Unit,
+    hasOverlayPermission: Boolean,
     onRefresh: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Demo 状态", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
             Text("Usage Access：${if (hasUsageAccess) "已授权" else "未授权"}")
+            Text("悬浮窗权限：${if (hasOverlayPermission) "已授权" else "未授权"}")
             Text("当前受限 App：${restrictedLabel ?: "未选择"}${restrictedPackage?.let { " ($it)" } ?: ""}")
-            Text("真实提醒流程：选择受限 App → 开启无障碍服务 → 切到该 App → 时停提醒页出现。")
+            Text("推荐流程：Usage Access + 悬浮窗权限 → 选择受限 App → 启动极速监控 → 打开目标 App。无障碍服务保留为辅助。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage Access") }
-                Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍服务") }
+                Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
+                Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动极速监控") }
+                OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止") }
+            }
+            OutlinedButton(onClick = onOpenAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text("无障碍服务（辅助方案）") }
             OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新统计/规则") }
         }
     }
@@ -201,6 +256,27 @@ private fun DebugCard(debugState: DemoDebugState) {
             Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
             Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
             Text("极速逻辑：只监听 TYPE_WINDOW_STATE_CHANGED，notificationTimeout=0，命中 event.packageName 后立即显示 Accessibility Overlay；调试写入已节流。")
+        }
+    }
+}
+
+@Composable
+private fun IntentConfigCard(
+    intentText: String,
+    onIntentTextChange: (String) -> Unit,
+    onSave: () -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("打开 App 是为了什么？", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("自定义意图选项，用逗号分隔。弹窗会让你选择一个意图，继续后顶部小悬浮窗会显示当前意图。")
+            OutlinedTextField(
+                value = intentText,
+                onValueChange = onIntentTextChange,
+                label = { Text("意图列表") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项") }
         }
     }
 }

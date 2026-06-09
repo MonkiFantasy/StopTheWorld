@@ -14,6 +14,8 @@ object DemoBlockPrefs {
     private const val KEY_LAST_TRIGGER_PACKAGE = "last_trigger_package"
     private const val KEY_LAST_TRIGGER_AT = "last_trigger_at"
     private const val KEY_LAST_SKIP_REASON = "last_skip_reason"
+    private const val KEY_INTENTS = "custom_intents"
+    private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
@@ -35,17 +37,28 @@ object DemoBlockPrefs {
             .apply()
     }
 
+    fun intents(context: Context): List<String> =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getString(KEY_INTENTS, DEFAULT_INTENTS)
+            .orEmpty()
+            .split('|', ',', '，', '\n')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .take(8)
+            .ifEmpty { DEFAULT_INTENTS.split('|') }
+
+    fun setIntents(context: Context, values: List<String>) {
+        val cleaned = values.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(8)
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_INTENTS, cleaned.ifEmpty { DEFAULT_INTENTS.split('|') }.joinToString("|"))
+            .apply()
+    }
+
     fun setUnlockUntil(context: Context, packageName: String, untilMillis: Long, intent: String?) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_UNLOCK_UNTIL_PREFIX + packageName, untilMillis)
             .putString(KEY_LAST_INTENT_PREFIX + packageName, intent)
-            .apply()
-    }
-
-    fun clearUnlock(context: Context, packageName: String) {
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
-            .remove(KEY_UNLOCK_UNTIL_PREFIX + packageName)
-            .remove(KEY_LAST_INTENT_PREFIX + packageName)
             .apply()
     }
 
