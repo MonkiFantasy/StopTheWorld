@@ -102,18 +102,21 @@ private val NeonBorderBrush = Brush.linearGradient(
 )
 
 private val DroidSpacesLightColors = lightColorScheme(
-    background = Color(0xFFF6F7F9),
-    surface = Color(0xFFF0F1F3),
-    surfaceVariant = Color(0xFFE7E9EC),
-    primary = Color(0xFF5E6672),
-    primaryContainer = Color(0xFFE1E4E8),
-    secondary = Color(0xFF7A818C),
-    secondaryContainer = Color(0xFFE9EAED),
-    tertiary = Color(0xFF65727C),
-    tertiaryContainer = Color(0xFFE4E8EA),
-    onBackground = Color(0xFF202327),
-    onSurface = Color(0xFF25282D),
-    onSurfaceVariant = Color(0xFF5B626B),
+    background = Color(0xFFFFFBFF),
+    surface = Color(0xFFF6F2F7),
+    surfaceVariant = Color(0xFFE7E1EA),
+    surfaceContainer = Color(0xFFF0EDF2),
+    surfaceContainerHigh = Color(0xFFEAE7EC),
+    primary = Color(0xFF536AA3),
+    primaryContainer = Color(0xFFE2E7FA),
+    secondary = Color(0xFF6E7480),
+    secondaryContainer = Color(0xFFE9ECF2),
+    tertiary = Color(0xFF6B6477),
+    tertiaryContainer = Color(0xFFECE7F2),
+    outlineVariant = Color(0xFFC9C5CF),
+    onBackground = Color(0xFF1B1B1F),
+    onSurface = Color(0xFF1B1B1F),
+    onSurfaceVariant = Color(0xFF5F5D66),
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.White,
@@ -292,17 +295,28 @@ private fun DemoHome(
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                NavigationBar(
-                    containerColor = Color(0xFFF2F3F5),
-                    tonalElevation = 0.dp,
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
+                        .height(64.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+                    shadowElevation = 3.dp,
                 ) {
-                    tabs.forEachIndexed { index, item ->
-                        NavigationBarItem(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            icon = { Text(item.second, color = if (selectedTab == index) Color(0xFF4D5662) else Color(0xFF9AA0A8)) },
-                            label = { Text(item.first) },
-                        )
+                    NavigationBar(
+                        containerColor = Color.Transparent,
+                        tonalElevation = 0.dp,
+                    ) {
+                        tabs.forEachIndexed { index, item ->
+                            NavigationBarItem(
+                                selected = selectedTab == index,
+                                onClick = { selectedTab = index },
+                                icon = { Text(item.second, color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)) },
+                                label = { Text(item.first, style = MaterialTheme.typography.labelSmall) },
+                            )
+                        }
                     }
                 }
             },
@@ -312,10 +326,18 @@ private fun DemoHome(
                     .fillMaxSize()
                     .padding(innerPadding)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("时停 Stop the World", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer, border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))) {
+                        Text("时", modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                    }
+                    Column {
+                        Text("时停", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                        Text("Stop the World", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             when (selectedTab) {
                 0 -> {
                     StatusCard(
@@ -457,9 +479,9 @@ private fun StatusCard(
     onRefresh: () -> Unit,
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F1F3)),
-        border = BorderStroke(1.dp, Color(0xFFE0E2E6)),
-        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
+        shape = RoundedCornerShape(20.dp),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("状态", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
@@ -507,7 +529,7 @@ private fun StatusChip(label: String, ok: Boolean) {
 
 @Composable
 private fun DebugCard(debugState: DemoDebugState) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("触发调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}")
@@ -527,7 +549,7 @@ private fun IntentConfigCard(
     onIntentTextChange: (String) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("全局目的模板", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Text("自定义意图选项，用逗号分隔。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -550,7 +572,7 @@ private fun AppPurposeConfigCard(
     onSave: (String, String, Boolean?) -> Unit,
 ) {
     val apps = groups.firstOrNull { it.id == selectedGroupId }?.apps ?: groups.flatMap { it.apps }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("应用级目的配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("可针对某个应用覆盖目的选项；打开该应用时优先使用这里的设置。")
@@ -560,7 +582,7 @@ private fun AppPurposeConfigCard(
             apps.forEach { app ->
                 var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
                 var typed by remember(app.packageName, app.requireTypedPurpose) { mutableStateOf(app.requireTypedPurpose == true) }
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(24.dp)) {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(app.label, fontWeight = FontWeight.Bold)
                         Text(app.packageName, style = MaterialTheme.typography.bodySmall)
@@ -587,7 +609,7 @@ private fun AppPurposeConfigCard(
 
 @Composable
 private fun UsageStatsCard(usageRows: List<UsageAppInfo>) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("今日使用统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             if (usageRows.isEmpty()) {
@@ -894,7 +916,7 @@ private fun TestAndDebugCard(
     onRefresh: () -> Unit,
 ) {
     val totalApps = groups.sumOf { it.apps.size }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("测试与调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
             Text("这里是开发测试区，和上面的日常使用/分组配置分开。")
@@ -932,7 +954,7 @@ private fun RestrictedAppPicker(
     }
     val visibleApps = if (showAll || normalizedQuery.isNotBlank()) filteredApps else filteredApps.take(30)
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("添加目标 App", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("当前添加到：$selectedGroupName。已加载 ${launchableApps.size} 个可配置应用，可搜索包名/名称。", style = MaterialTheme.typography.bodySmall)
@@ -1001,7 +1023,7 @@ private fun AppPickRow(
 
 @Composable
 private fun RuleCard(rule: AppRule, state: AppRuntimeState) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("当前规则：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("今日已使用：${state.usedTodayMillis / 60_000} / ${rule.dailyLimitMinutes} 分钟")
@@ -1026,7 +1048,7 @@ private fun FirstOpenInterventionCard(rule: AppRule, decision: Decision) {
         }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(28.dp), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("提醒页预览：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("先停一下", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)

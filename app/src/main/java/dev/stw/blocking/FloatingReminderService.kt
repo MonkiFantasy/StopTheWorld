@@ -172,27 +172,35 @@ class FloatingReminderService : Service() {
         card.addText("这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
 
         val chips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val chipViews = mutableListOf<TextView>()
+        fun refreshChips() {
+            chipViews.forEach { view ->
+                val raw = view.tag as String
+                val selected = raw == selectedIntent
+                view.text = if (selected) "✓ $raw" else raw
+                view.setTextColor(if (selected) Color.rgb(55, 48, 163) else Color.rgb(51, 65, 85))
+                view.background = rounded(if (selected) Color.rgb(224, 231, 255) else Color.rgb(241, 245, 249), 999.dp)
+            }
+        }
         intents.chunked(2).forEach { rowItems ->
             val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp, 0, 2.dp); clipToPadding = false }
             rowItems.forEach { item ->
                 val chip = TextView(this).apply {
-                    text = if (item == selectedIntent) "✓ $item" else item
                     gravity = Gravity.CENTER
                     textSize = 14f
-                    setTextColor(if (item == selectedIntent) Color.rgb(55, 48, 163) else Color.rgb(51, 65, 85))
                     setPadding(8.dp, 8.dp, 8.dp, 8.dp)
-                    background = rounded(if (item == selectedIntent) Color.rgb(224, 231, 255) else Color.rgb(241, 245, 249), 999.dp)
+                    tag = item
                     setOnClickListener {
                         selectedIntent = item
-                        text = "✓ $item"
-                        setTextColor(Color.rgb(55, 48, 163))
-                        background = rounded(Color.rgb(224, 231, 255), 999.dp)
+                        refreshChips()
                     }
                 }
+                chipViews += chip
                 row.addView(chip, LinearLayout.LayoutParams(0, 42.dp, 1f).apply { setMargins(3.dp, 4.dp, 3.dp, 4.dp) })
             }
             chips.addView(row)
         }
+        refreshChips()
         card.addView(chips)
 
         val countdownText = TextView(this).apply {
