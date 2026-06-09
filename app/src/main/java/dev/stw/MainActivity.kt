@@ -122,6 +122,21 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatch
     Build.VERSION.SDK_INT < 23 || powerManager.isIgnoringBatteryOptimizations(context.packageName)
 }.getOrDefault(false)
 
+private data class HomeSnapshot(
+    val hasUsageAccess: Boolean,
+    val usageRows: List<UsageAppInfo>,
+    val launchableApps: List<LaunchableAppInfo>,
+    val groups: List<RestrictedGroup>,
+    val restrictedPackage: String?,
+    val restrictedLabel: String?,
+    val debugState: DemoDebugState,
+    val hasOverlayPermission: Boolean,
+    val hasAccessibility: Boolean,
+    val hasFloatingRunning: Boolean,
+    val ignoresBatteryOptimization: Boolean,
+    val intentText: String,
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -213,21 +228,35 @@ private fun DemoHome(
     val lifecycleOwner = LocalLifecycleOwner.current
 
     suspend fun refreshAll() {
-        withContext(Dispatchers.IO) {
-            hasUsageAccess = repository.hasUsageAccess()
-            usageRows = repository.loadTodayUsage(limit = 12)
-            launchableApps = repository.loadLaunchableApps().take(30)
-            groups = DemoBlockPrefs.groups(context)
-            if (groups.none { it.id == selectedGroupId }) selectedGroupId = groups.firstOrNull()?.id ?: "default"
-            restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
-            restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
-            debugState = DemoBlockPrefs.debugState(context)
-            hasOverlayPermission = Settings.canDrawOverlays(context)
-            hasAccessibility = AccessibilityStatus.isServiceEnabled(context)
-            hasFloatingRunning = DemoBlockPrefs.isFloatingRunning(context)
-            ignoresBatteryOptimization = isIgnoringBatteryOptimizations(context)
-            intentText = DemoBlockPrefs.intents(context).joinToString("，")
+        val snapshot = withContext(Dispatchers.IO) {
+            HomeSnapshot(
+                hasUsageAccess = repository.hasUsageAccess(),
+                usageRows = repository.loadTodayUsage(limit = 12),
+                launchableApps = repository.loadLaunchableApps().take(30),
+                groups = DemoBlockPrefs.groups(context),
+                restrictedPackage = DemoBlockPrefs.restrictedPackage(context),
+                restrictedLabel = DemoBlockPrefs.restrictedLabel(context),
+                debugState = DemoBlockPrefs.debugState(context),
+                hasOverlayPermission = Settings.canDrawOverlays(context),
+                hasAccessibility = AccessibilityStatus.isServiceEnabled(context),
+                hasFloatingRunning = DemoBlockPrefs.isFloatingRunning(context),
+                ignoresBatteryOptimization = isIgnoringBatteryOptimizations(context),
+                intentText = DemoBlockPrefs.intents(context).joinToString("，"),
+            )
         }
+        hasUsageAccess = snapshot.hasUsageAccess
+        usageRows = snapshot.usageRows
+        launchableApps = snapshot.launchableApps
+        groups = snapshot.groups
+        if (groups.none { it.id == selectedGroupId }) selectedGroupId = groups.firstOrNull()?.id ?: "default"
+        restrictedPackage = snapshot.restrictedPackage
+        restrictedLabel = snapshot.restrictedLabel
+        debugState = snapshot.debugState
+        hasOverlayPermission = snapshot.hasOverlayPermission
+        hasAccessibility = snapshot.hasAccessibility
+        hasFloatingRunning = snapshot.hasFloatingRunning
+        ignoresBatteryOptimization = snapshot.ignoresBatteryOptimization
+        intentText = snapshot.intentText
     }
 
     LaunchedEffect(refreshTick) { refreshAll() }
