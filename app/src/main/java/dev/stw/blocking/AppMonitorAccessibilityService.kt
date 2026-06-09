@@ -15,40 +15,50 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 
+/**
+ * Ultra-light demo blocker.
+ *
+ * Runtime performance rules:
+ * - only handle TYPE_WINDOW_STATE_CHANGED;
+ * - no UsageStats query inside accessibility callback;
+ * - no rootInActiveWindow lookup;
+ * - no repeated delayed foreground polling;
+ * - no SharedPreferences debug write for every non-target event;
+ * - minimal View hierarchy for overlay.
+ */
 class AppMonitorAccessibilityService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var overlayPackage: String? = null
     private var countdownRunnable: Runnable? = null
-    private var lastEvaluatedPackage: String? = null
-    private var lastEvaluatedAt: Long = 0L
+    private var lastTargetTriggerAt = 0L
+    private var lastDebugWriteAt = 0L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        DemoBlockPrefs.markSkip(this, "service_connected")
+        writeDebug("service_connected")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        val packageName = event?.packageName?.toString() ?: return
-        val eventType = event.eventType
-        DemoBlockPrefs.markSeen(this, "event:$eventType:$packageName")
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val packageName = event.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
+        if (packageName == applicationContext.packageName) return
 
-        // Fast path: TYPE_WINDOW_STATE_CHANGED is usually the app/activity switch event.
-        // Do not query UsageStats here; it is too slow and can make low-end phones stutter.
-        if (eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-            evaluatePackage(packageName)
-            return
-        }
+        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
+        if (packageName != restricted) return
 
-        // Lightweight fallback for devices that only emit windows-changed around app switch.
-        // Debounce aggressively and only use the event package; no root/usage polling.
-        if (eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) {
-            val now = System.currentTimeMillis()
-            if (packageName == lastEvaluatedPackage && now - lastEvaluatedAt < 350L) return
-            handler.postDelayed({ evaluatePackage(packageName) }, 80L)
-        }
+        val now = System.currentTimeMillis()
+        if (DemoBlockPrefs.unlockUntil(this, packageName) > now) return
+        if (overlayView != null && overlayPackage == packageName) return
+        if (now - lastTargetTriggerAt < 500L) return
+        lastTargetTriggerAt = now
+
+        // Only write debug on actual target trigger, not for every foreground event.
+        DemoBlockPrefs.markSeen(this, packageName, now)
+        DemoBlockPrefs.markBlocked(this, packageName, now)
+        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName)
     }
 
     override fun onInterrupt() = Unit
@@ -56,44 +66,6 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         hideOverlay()
         super.onDestroy()
-    }
-
-    private fun evaluatePackage(packageName: String) {
-        val now = System.currentTimeMillis()
-        lastEvaluatedPackage = packageName
-        lastEvaluatedAt = now
-
-        if (packageName == applicationContext.packageName) {
-            DemoBlockPrefs.markSkip(this, "self_app_foreground")
-            return
-        }
-
-        val restricted = DemoBlockPrefs.restrictedPackage(this)
-        if (restricted == null) {
-            DemoBlockPrefs.markSkip(this, "no_restricted_app")
-            return
-        }
-        if (packageName != restricted) {
-            DemoBlockPrefs.markSkip(this, "not_restricted: $packageName")
-            return
-        }
-
-        val unlockUntil = DemoBlockPrefs.unlockUntil(this, packageName)
-        if (unlockUntil > now) {
-            DemoBlockPrefs.markSkip(this, "unlocked_until_$unlockUntil")
-            return
-        }
-        if (overlayView != null && overlayPackage == packageName) {
-            DemoBlockPrefs.markSkip(this, "overlay_already_showing")
-            return
-        }
-        if (now - DemoBlockPrefs.lastBlockedAt(this, packageName) < 650L) {
-            DemoBlockPrefs.markSkip(this, "trigger_debounce")
-            return
-        }
-
-        DemoBlockPrefs.markBlocked(this, packageName, now)
-        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName)
     }
 
     private fun showOverlay(packageName: String, appLabel: String) {
@@ -111,44 +83,41 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             orientation = LinearLayout.VERTICAL
             setPadding(22.dp, 20.dp, 22.dp, 20.dp)
             background = rounded(Color.WHITE, 24.dp)
-            elevation = 12f
+            elevation = 10f
         }
-        root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(card, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
 
-        card.addText("时停 · Stop the World", 12f, true, Color.rgb(37, 99, 235), top = 0)
-        card.addText("你正在打开 $appLabel", 18f, true, Color.rgb(17, 24, 39), top = 12.dp)
-        card.addText("先停一下", 28f, true, Color.rgb(17, 24, 39), top = 0)
-        card.addText("这是有意打开，还是习惯性点开？", 16f, false, Color.rgb(55, 65, 81), top = 6.dp)
+        card.addText("时停 · Stop the World", 12f, true, Color.rgb(37, 99, 235), 0)
+        card.addText("先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
+        card.addText("你正在打开 $appLabel", 17f, true, Color.rgb(51, 65, 85), 4.dp)
+        card.addText("这是有意打开，还是习惯性点开？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
 
         val countdownText = TextView(this).apply {
+            text = "还需等待 3 秒"
             textSize = 18f
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.rgb(17, 24, 39))
             gravity = Gravity.CENTER
-            text = "还需等待 5 秒"
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(Color.rgb(55, 48, 163))
             setPadding(0, 18.dp, 0, 14.dp)
         }
         card.addView(countdownText)
 
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
-        val cancelButton = Button(this).apply {
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val cancel = Button(this).apply {
             text = "不打开了"
             setTextColor(Color.rgb(30, 64, 175))
-            background = rounded(Color.rgb(239, 246, 255), 16.dp, strokeColor = Color.rgb(147, 197, 253), strokeWidth = 1.dp)
+            background = rounded(Color.rgb(239, 246, 255), 16.dp, Color.rgb(147, 197, 253), 1.dp)
             setOnClickListener {
                 hideOverlay()
                 performGlobalAction(GLOBAL_ACTION_HOME)
             }
         }
-        val continueButton = Button(this).apply {
+        val cont = Button(this).apply {
             text = "继续 5 分钟"
             isEnabled = false
+            alpha = 0.45f
             setTextColor(Color.WHITE)
             background = rounded(Color.rgb(37, 99, 235), 16.dp)
-            alpha = 0.45f
             setOnClickListener {
                 DemoBlockPrefs.setUnlockUntil(
                     context = this@AppMonitorAccessibilityService,
@@ -159,11 +128,18 @@ class AppMonitorAccessibilityService : AccessibilityService() {
                 hideOverlay()
             }
         }
-        row.addView(cancelButton, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { rightMargin = 6.dp })
-        row.addView(continueButton, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { leftMargin = 6.dp })
+        row.addView(cancel, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { rightMargin = 6.dp })
+        row.addView(cont, LinearLayout.LayoutParams(0, 50.dp, 1f).apply { leftMargin = 6.dp })
         card.addView(row)
 
-        card.addText("隐私：仅检测前台 App 包名，不读取屏幕内容。", 12f, false, Color.rgb(100, 116, 139), top = 12.dp)
+        val privacy = TextView(this).apply {
+            text = "仅检测前台 App 包名，不读取屏幕内容。"
+            textSize = 12f
+            setTextColor(Color.rgb(100, 116, 139))
+            gravity = Gravity.CENTER
+            setPadding(0, 12.dp, 0, 0)
+        }
+        card.addView(privacy)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -171,31 +147,37 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT,
-        ).apply { gravity = Gravity.CENTER }
+        ).apply {
+            gravity = Gravity.CENTER
+            title = "Stop the World"
+        }
 
         overlayView = root
         runCatching {
             windowManager?.addView(root, params)
-            startCountdown(countdownText, continueButton)
+            startCountdown(countdownText, cont)
+            writeDebug("overlay_added:$packageName")
         }.onFailure { error ->
             overlayView = null
             overlayPackage = null
-            DemoBlockPrefs.markSkip(this, "overlay_error: ${error.javaClass.simpleName}")
-            startActivity(
-                BlockingActivity.createIntent(
-                    context = this,
-                    packageName = packageName,
-                    appLabel = appLabel,
-                    delaySeconds = 5,
-                    unlockMinutes = 5,
-                    message = "这是有意打开，还是习惯性点开？",
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            )
+            writeDebug("overlay_error:${error.javaClass.simpleName}")
+            runCatching {
+                startActivity(
+                    BlockingActivity.createIntent(
+                        context = this,
+                        packageName = packageName,
+                        appLabel = appLabel,
+                        delaySeconds = 3,
+                        unlockMinutes = 5,
+                        message = "这是有意打开，还是习惯性点开？",
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+                )
+            }
         }
     }
 
     private fun startCountdown(textView: TextView, continueButton: Button) {
-        var remaining = 5
+        var remaining = 3
         countdownRunnable = object : Runnable {
             override fun run() {
                 if (remaining > 0) {
@@ -215,12 +197,20 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private fun hideOverlay() {
         countdownRunnable?.let { handler.removeCallbacks(it) }
         countdownRunnable = null
-        overlayView?.let { view -> runCatching { windowManager?.removeView(view) } }
+        overlayView?.let { runCatching { windowManager?.removeView(it) } }
         overlayView = null
         overlayPackage = null
     }
 
-    private fun LinearLayout.addText(textValue: String, sizeSp: Float, bold: Boolean, color: Int, top: Int = 8.dp) {
+    private fun writeDebug(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastDebugWriteAt > 1_000L) {
+            lastDebugWriteAt = now
+            DemoBlockPrefs.markSkip(this, reason)
+        }
+    }
+
+    private fun LinearLayout.addText(textValue: String, sizeSp: Float, bold: Boolean, color: Int, top: Int) {
         addView(
             TextView(this@AppMonitorAccessibilityService).apply {
                 text = textValue
