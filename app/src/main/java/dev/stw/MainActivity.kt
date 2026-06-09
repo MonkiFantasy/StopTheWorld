@@ -53,6 +53,7 @@ import dev.stw.blocking.AccessibilityStatus
 import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
 import dev.stw.blocking.FloatingReminderService
+import dev.stw.blocking.RestrictedGroup
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
@@ -141,6 +142,9 @@ private fun DemoHome(
     var hasUsageAccess by remember { mutableStateOf(false) }
     var usageRows by remember { mutableStateOf<List<UsageAppInfo>>(emptyList()) }
     var launchableApps by remember { mutableStateOf<List<LaunchableAppInfo>>(emptyList()) }
+    var groups by remember { mutableStateOf(DemoBlockPrefs.groups(context)) }
+    var selectedGroupId by remember { mutableStateOf(groups.firstOrNull()?.id ?: "default") }
+    var newGroupName by remember { mutableStateOf("学习专注") }
     var restrictedPackage by remember { mutableStateOf(DemoBlockPrefs.restrictedPackage(context)) }
     var restrictedLabel by remember { mutableStateOf(DemoBlockPrefs.restrictedLabel(context)) }
     var debugState by remember { mutableStateOf(DemoBlockPrefs.debugState(context)) }
@@ -157,6 +161,8 @@ private fun DemoHome(
             hasUsageAccess = repository.hasUsageAccess()
             usageRows = repository.loadTodayUsage(limit = 12)
             launchableApps = repository.loadLaunchableApps().take(30)
+            groups = DemoBlockPrefs.groups(context)
+            if (groups.none { it.id == selectedGroupId }) selectedGroupId = groups.firstOrNull()?.id ?: "default"
             restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
             restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
             debugState = DemoBlockPrefs.debugState(context)
@@ -190,8 +196,7 @@ private fun DemoHome(
 
         StatusCard(
             hasUsageAccess = hasUsageAccess,
-            restrictedLabel = restrictedLabel,
-            restrictedPackage = restrictedPackage,
+            totalRestrictedApps = groups.sumOf { it.apps.size },
             onOpenUsageAccess = onOpenUsageAccess,
             onOpenAccessibilitySettings = onOpenAccessibilitySettings,
             onOpenOverlaySettings = onOpenOverlaySettings,
@@ -202,8 +207,56 @@ private fun DemoHome(
             hasAccessibility = hasAccessibility,
             hasFloatingRunning = hasFloatingRunning,
             ignoresBatteryOptimization = ignoresBatteryOptimization,
-            onOpenRestrictedApp = {
-                val pkg = restrictedPackage
+            onRefresh = { refreshTick++ },
+        )
+
+        GroupManagementCard(
+            groups = groups,
+            selectedGroupId = selectedGroupId,
+            newGroupName = newGroupName,
+            onSelectedGroupChange = { selectedGroupId = it },
+            onNewGroupNameChange = { newGroupName = it },
+            onCreateGroup = {
+                val group = DemoBlockPrefs.addGroup(context, newGroupName)
+                groups = DemoBlockPrefs.groups(context)
+                selectedGroupId = group.id
+                newGroupName = ""
+            },
+            onDeleteGroup = { groupId ->
+                DemoBlockPrefs.deleteGroup(context, groupId)
+                groups = DemoBlockPrefs.groups(context)
+                selectedGroupId = groups.firstOrNull()?.id ?: "default"
+                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+            },
+            onRemoveApp = { groupId, packageName ->
+                DemoBlockPrefs.removeAppFromGroup(context, groupId, packageName)
+                groups = DemoBlockPrefs.groups(context)
+                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+            },
+        )
+
+        RestrictedAppPicker(
+            usageRows = usageRows,
+            launchableApps = launchableApps,
+            currentPackages = groups.flatMap { it.apps }.map { it.packageName }.toSet(),
+            selectedGroupName = groups.firstOrNull { it.id == selectedGroupId }?.name ?: "默认分组",
+            onSelect = { packageName, label ->
+                val target = groups.firstOrNull { it.id == selectedGroupId } ?: DemoBlockPrefs.addGroup(context, "默认分组")
+                DemoBlockPrefs.addAppToGroup(context, target.id, packageName, label)
+                groups = DemoBlockPrefs.groups(context)
+                selectedGroupId = target.id
+                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+            },
+        )
+
+        TestAndDebugCard(
+            groups = groups,
+            debugState = debugState,
+            onOpenFirstRestrictedApp = {
+                val pkg = groups.flatMap { it.apps }.firstOrNull()?.packageName
                 val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
                 if (launch != null) {
                     launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -212,8 +265,6 @@ private fun DemoHome(
             },
             onRefresh = { refreshTick++ },
         )
-
-        DebugCard(debugState = debugState)
 
         IntentConfigCard(
             intentText = intentText,
@@ -226,21 +277,6 @@ private fun DemoHome(
 
         UsageStatsCard(usageRows = usageRows)
 
-        RestrictedAppPicker(
-            usageRows = usageRows,
-            launchableApps = launchableApps,
-            currentPackage = restrictedPackage,
-            onSelect = { packageName, label ->
-                DemoBlockPrefs.setRestrictedApp(context, packageName, label)
-                restrictedPackage = packageName
-                restrictedLabel = label
-            },
-            onClear = {
-                DemoBlockPrefs.clearRestrictedApp(context)
-                restrictedPackage = null
-                restrictedLabel = null
-            },
-        )
 
         RuleCard(
             rule = AppRule(
@@ -271,8 +307,7 @@ private fun DemoHome(
 @Composable
 private fun StatusCard(
     hasUsageAccess: Boolean,
-    restrictedLabel: String?,
-    restrictedPackage: String?,
+    totalRestrictedApps: Int,
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
@@ -283,7 +318,6 @@ private fun StatusCard(
     hasAccessibility: Boolean,
     hasFloatingRunning: Boolean,
     ignoresBatteryOptimization: Boolean,
-    onOpenRestrictedApp: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -295,9 +329,9 @@ private fun StatusCard(
                 StatusChip("无障碍", hasAccessibility)
                 StatusChip("极速监控", hasFloatingRunning)
                 StatusChip("省电白名单", ignoresBatteryOptimization)
-                StatusChip("受限App", restrictedPackage != null)
+                StatusChip("目标App", totalRestrictedApps > 0)
             }
-            Text("当前受限 App：${restrictedLabel ?: "未选择"}${restrictedPackage?.let { " ($it)" } ?: ""}")
+            Text("当前目标 App：$totalRestrictedApps 个，分组管理在下方；这里保留日常使用所需权限和监控开关。")
             Text("推荐：把时停的后台省电策略改成“无限制/不优化”，再同时开启无障碍和兜底监控；两路信号共用触发锁，不会双弹。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
@@ -309,8 +343,7 @@ private fun StatusCard(
                 Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控") }
                 OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底") }
             }
-            Button(onClick = onOpenRestrictedApp, enabled = restrictedPackage != null, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开受限 App") }
-            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态/统计/规则") }
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新使用状态") }
         }
     }
 }
@@ -387,21 +420,99 @@ private fun UsageStatsCard(usageRows: List<UsageAppInfo>) {
     }
 }
 
+
+@Composable
+private fun GroupManagementCard(
+    groups: List<RestrictedGroup>,
+    selectedGroupId: String,
+    newGroupName: String,
+    onSelectedGroupChange: (String) -> Unit,
+    onNewGroupNameChange: (String) -> Unit,
+    onCreateGroup: () -> Unit,
+    onDeleteGroup: (String) -> Unit,
+    onRemoveApp: (String, String) -> Unit,
+) {
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("分组管理", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("一个分组可以包含多个目标 App。当前触发逻辑会匹配所有分组里的 App。")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = newGroupName,
+                    onValueChange = onNewGroupNameChange,
+                    label = { Text("新分组名") },
+                    modifier = Modifier.weight(1f),
+                )
+                Button(onClick = onCreateGroup) { Text("添加") }
+            }
+            if (groups.isEmpty()) {
+                Text("暂无分组。先添加一个分组，例如：学习、娱乐、社交。")
+            }
+            groups.forEach { group ->
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Button(onClick = { onSelectedGroupChange(group.id) }, modifier = Modifier.weight(1f)) {
+                                Text(if (group.id == selectedGroupId) "✓ ${group.name}" else group.name)
+                            }
+                            OutlinedButton(onClick = { onDeleteGroup(group.id) }) { Text("删除") }
+                        }
+                        if (group.apps.isEmpty()) {
+                            Text("这个分组还没有 App。点上面的分组按钮选中后，在下方添加。")
+                        } else {
+                            group.apps.forEach { app ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(app.label, fontWeight = FontWeight.SemiBold)
+                                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    OutlinedButton(onClick = { onRemoveApp(group.id, app.packageName) }) { Text("移除") }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TestAndDebugCard(
+    groups: List<RestrictedGroup>,
+    debugState: DemoDebugState,
+    onOpenFirstRestrictedApp: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val totalApps = groups.sumOf { it.apps.size }
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("测试与调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("这里是开发测试区，和上面的日常使用/分组配置分开。")
+            Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App") }
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新调试信息") }
+            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}")
+            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}")
+            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
+            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
+            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
+            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
+        }
+    }
+}
+
 @Composable
 private fun RestrictedAppPicker(
     usageRows: List<UsageAppInfo>,
     launchableApps: List<LaunchableAppInfo>,
-    currentPackage: String?,
+    currentPackages: Set<String>,
+    selectedGroupName: String,
     onSelect: (String, String) -> Unit,
-    onClear: () -> Unit,
 ) {
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("选择真实提醒 App", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("建议先从今日使用统计里选择一个 App。开启无障碍服务后，真实打开它会出现提醒页。")
-            if (currentPackage != null) {
-                OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text("清除当前受限 App") }
-            }
+            Text("添加目标 App", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("当前添加到：$selectedGroupName。可从今日统计或可启动 App 中添加多个目标 App。")
             Text("今日常用 App", fontWeight = FontWeight.SemiBold)
             if (usageRows.isEmpty()) {
                 Text("暂无 UsageStats 数据，下面显示可启动 App 列表。")
@@ -410,7 +521,7 @@ private fun RestrictedAppPicker(
                 AppPickRow(
                     label = row.appLabel,
                     packageName = row.packageName,
-                    selected = row.packageName == currentPackage,
+                    selected = row.packageName in currentPackages,
                     subtitle = "${formatDuration(row.usedMillis)} · 打开 ${row.openCount} 次",
                     onClick = { onSelect(row.packageName, row.appLabel) },
                 )
@@ -420,7 +531,7 @@ private fun RestrictedAppPicker(
                 AppPickRow(
                     label = app.appLabel,
                     packageName = app.packageName,
-                    selected = app.packageName == currentPackage,
+                    selected = app.packageName in currentPackages,
                     subtitle = app.packageName,
                     onClick = { onSelect(app.packageName, app.appLabel) },
                 )

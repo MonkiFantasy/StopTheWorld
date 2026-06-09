@@ -1,11 +1,14 @@
 package dev.stw.blocking
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 
 object DemoBlockPrefs {
     private const val FILE = "stop_the_world_demo"
     private const val KEY_RESTRICTED_PACKAGE = "restricted_package"
     private const val KEY_RESTRICTED_LABEL = "restricted_label"
+    private const val KEY_GROUPS = "restricted_groups"
     private const val KEY_UNLOCK_UNTIL_PREFIX = "unlock_until_"
     private const val KEY_LAST_BLOCK_AT_PREFIX = "last_block_at_"
     private const val KEY_LAST_INTENT_PREFIX = "last_intent_"
@@ -20,24 +23,116 @@ object DemoBlockPrefs {
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
+        val group = groups(context).firstOrNull() ?: RestrictedGroup(newGroupId(), "默认分组", emptyList())
+        val updated = groups(context)
+            .filterNot { it.id == group.id }
+            .let { others ->
+                val apps = (group.apps + RestrictedAppEntry(packageName, label)).distinctBy { it.packageName }
+                listOf(group.copy(apps = apps)) + others
+            }
+        setGroups(context, updated)
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putString(KEY_RESTRICTED_PACKAGE, packageName)
             .putString(KEY_RESTRICTED_LABEL, label)
             .apply()
     }
 
-    fun restrictedPackage(context: Context): String? =
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_RESTRICTED_PACKAGE, null)
+    fun restrictedPackage(context: Context): String? = restrictedApps(context).firstOrNull()?.packageName
 
-    fun restrictedLabel(context: Context): String? =
-        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_RESTRICTED_LABEL, null)
+    fun restrictedLabel(context: Context): String? = restrictedApps(context).firstOrNull()?.label
+
+    fun restrictedApps(context: Context): List<RestrictedAppEntry> = groups(context).flatMap { it.apps }.distinctBy { it.packageName }
+
+    fun restrictedPackages(context: Context): Set<String> = restrictedApps(context).map { it.packageName }.toSet()
+
+    fun labelForPackage(context: Context, packageName: String): String? = restrictedApps(context).firstOrNull { it.packageName == packageName }?.label
 
     fun clearRestrictedApp(context: Context) {
+        setGroups(context, emptyList())
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .remove(KEY_RESTRICTED_PACKAGE)
             .remove(KEY_RESTRICTED_LABEL)
             .apply()
     }
+
+    fun groups(context: Context): List<RestrictedGroup> {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val raw = prefs.getString(KEY_GROUPS, null)
+        val parsed = raw?.let { parseGroups(it) }.orEmpty()
+        if (parsed.isNotEmpty()) return parsed
+        val legacyPkg = prefs.getString(KEY_RESTRICTED_PACKAGE, null)
+        val legacyLabel = prefs.getString(KEY_RESTRICTED_LABEL, null)
+        return if (legacyPkg != null) listOf(RestrictedGroup("default", "默认分组", listOf(RestrictedAppEntry(legacyPkg, legacyLabel ?: legacyPkg)))) else emptyList()
+    }
+
+    fun setGroups(context: Context, groups: List<RestrictedGroup>) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_GROUPS, encodeGroups(groups))
+            .apply()
+    }
+
+    fun addGroup(context: Context, name: String): RestrictedGroup {
+        val cleaned = name.trim().ifBlank { "新分组" }
+        val group = RestrictedGroup(newGroupId(), cleaned, emptyList())
+        setGroups(context, groups(context) + group)
+        return group
+    }
+
+    fun deleteGroup(context: Context, groupId: String) {
+        setGroups(context, groups(context).filterNot { it.id == groupId })
+    }
+
+    fun addAppToGroup(context: Context, groupId: String, packageName: String, label: String) {
+        val current = groups(context).ifEmpty { listOf(RestrictedGroup("default", "默认分组", emptyList())) }
+        val targetId = current.firstOrNull { it.id == groupId }?.id ?: current.first().id
+        setGroups(context, current.map { group ->
+            if (group.id == targetId) group.copy(apps = (group.apps + RestrictedAppEntry(packageName, label)).distinctBy { it.packageName }) else group
+        })
+    }
+
+    fun removeAppFromGroup(context: Context, groupId: String, packageName: String) {
+        setGroups(context, groups(context).map { group ->
+            if (group.id == groupId) group.copy(apps = group.apps.filterNot { it.packageName == packageName }) else group
+        })
+    }
+
+    private fun parseGroups(raw: String): List<RestrictedGroup> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val appsArray = obj.optJSONArray("apps") ?: JSONArray()
+                val apps = buildList {
+                    for (j in 0 until appsArray.length()) {
+                        val app = appsArray.getJSONObject(j)
+                        val pkg = app.optString("packageName")
+                        if (pkg.isNotBlank()) add(RestrictedAppEntry(pkg, app.optString("label", pkg)))
+                    }
+                }
+                val id = obj.optString("id").ifBlank { newGroupId() }
+                add(RestrictedGroup(id, obj.optString("name", "分组"), apps))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodeGroups(groups: List<RestrictedGroup>): String = JSONArray().apply {
+        groups.forEach { group ->
+            put(JSONObject().apply {
+                put("id", group.id)
+                put("name", group.name)
+                put("apps", JSONArray().apply {
+                    group.apps.forEach { app ->
+                        put(JSONObject().apply {
+                            put("packageName", app.packageName)
+                            put("label", app.label)
+                        })
+                    }
+                })
+            })
+        }
+    }.toString()
+
+    private fun newGroupId(): String = "g_" + System.currentTimeMillis().toString(36)
 
     fun intents(context: Context): List<String> =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -166,4 +261,16 @@ data class DemoDebugState(
     val lastTriggerAt: Long,
     val lastSkipReason: String?,
     val floatingRunning: Boolean,
+)
+
+
+data class RestrictedAppEntry(
+    val packageName: String,
+    val label: String,
+)
+
+data class RestrictedGroup(
+    val id: String,
+    val name: String,
+    val apps: List<RestrictedAppEntry>,
 )

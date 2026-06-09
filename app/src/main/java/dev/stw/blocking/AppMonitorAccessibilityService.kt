@@ -61,8 +61,8 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             DemoBlockPrefs.markSeen(this, seenPackage, now)
         }
 
-        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
-        if (eventPackage != restricted && activePackage != restricted) return
+        val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
+        val restricted = eventPackage?.takeIf { it in restrictedPackages } ?: activePackage?.takeIf { it in restrictedPackages } ?: return
 
         // MIUI/Chromium-style apps can report the target package before the active-window list is
         // stable, while waiting for active-window verification can miss the instant-open moment.
@@ -128,7 +128,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         if (now - lastTargetTriggerAt < 700L) return
         if (!DemoBlockPrefs.canShowBlock(this, packageName, now, source)) return
         lastTargetTriggerAt = now
-        showOverlay(packageName, DemoBlockPrefs.restrictedLabel(this) ?: packageName, source)
+        showOverlay(packageName, DemoBlockPrefs.labelForPackage(this, packageName) ?: packageName, source)
     }
 
     private fun activeWindowPackageName(): String? {

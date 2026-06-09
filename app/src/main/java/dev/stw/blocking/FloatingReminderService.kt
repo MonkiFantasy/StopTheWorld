@@ -86,7 +86,8 @@ class FloatingReminderService : Service() {
             DemoBlockPrefs.markSkip(this, "overlay_permission_missing")
             return
         }
-        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: run {
+        val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
+        if (restrictedPackages.isEmpty()) {
             DemoBlockPrefs.markSkip(this, "monitor_running_no_restricted")
             return
         }
@@ -99,14 +100,14 @@ class FloatingReminderService : Service() {
             DemoBlockPrefs.markSeen(this, fg)
         }
         if (fg == packageName) return
-        if (fg != restricted) return
+        if (fg !in restrictedPackages) return
         val now = System.currentTimeMillis()
         if (DemoBlockPrefs.unlockUntil(this, fg) > now) return
         if (overlayView != null && overlayPackage == fg) return
         if (now - lastTriggerAt < 700L) return
         if (!DemoBlockPrefs.canShowBlock(this, fg, now, "fallback_usage_poll")) return
         lastTriggerAt = now
-        showOverlay(fg, DemoBlockPrefs.restrictedLabel(this) ?: fg, "fallback_usage_poll")
+        showOverlay(fg, DemoBlockPrefs.labelForPackage(this, fg) ?: fg, "fallback_usage_poll")
     }
 
     private fun latestForegroundPackage(): String? = runCatching {
