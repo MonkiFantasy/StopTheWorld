@@ -125,7 +125,13 @@ class FloatingReminderService : Service() {
                 ts = event.timeStamp
             }
         }
-        if (pkg != null) return@runCatching pkg
+        // UsageEvents can arrive late on MIUI. Do not re-trigger from an old foreground event
+        // after the user has chosen "do not open" and gone Home.
+        if (pkg != null && end - ts <= 2_500L) return@runCatching pkg
+        if (pkg != null) {
+            DemoBlockPrefs.markSkip(this, "fg_event_stale:${end - ts}ms:$pkg")
+            return@runCatching null
+        }
 
         // Fallback for devices/OEMs where queryEvents is delayed or sparse.
         usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
@@ -195,6 +201,7 @@ class FloatingReminderService : Service() {
         card.addView(countdownText)
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val cancel = button("不打开了", Color.rgb(239, 246, 255), Color.rgb(30, 64, 175)) {
+            DemoBlockPrefs.suppressAfterCancel(this, packageName)
             hideOverlay()
             val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             startActivity(home)

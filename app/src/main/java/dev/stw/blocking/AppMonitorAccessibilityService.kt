@@ -221,6 +221,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val cancel = button("不打开了", Color.rgb(239, 246, 255), Color.rgb(30, 64, 175)) {
+            DemoBlockPrefs.suppressAfterCancel(this, packageName)
             hideOverlay()
             performGlobalAction(GLOBAL_ACTION_HOME)
         }

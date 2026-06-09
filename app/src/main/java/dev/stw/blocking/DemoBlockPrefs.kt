@@ -14,6 +14,7 @@ object DemoBlockPrefs {
     private const val KEY_LAST_TRIGGER_PACKAGE = "last_trigger_package"
     private const val KEY_LAST_TRIGGER_AT = "last_trigger_at"
     private const val KEY_LAST_SKIP_REASON = "last_skip_reason"
+    private const val KEY_SUPPRESS_UNTIL_PREFIX = "suppress_until_"
     private const val KEY_INTENTS = "custom_intents"
     private const val KEY_FLOATING_RUNNING = "floating_running"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
@@ -79,6 +80,16 @@ object DemoBlockPrefs {
     fun lastIntent(context: Context, packageName: String): String? =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_LAST_INTENT_PREFIX + packageName, null)
 
+    fun suppressUntil(context: Context, packageName: String): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_SUPPRESS_UNTIL_PREFIX + packageName, 0L)
+
+    fun suppressAfterCancel(context: Context, packageName: String, durationMillis: Long = 12_000L) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_SUPPRESS_UNTIL_PREFIX + packageName, System.currentTimeMillis() + durationMillis)
+            .putString(KEY_LAST_SKIP_REASON, "cancel_suppressed")
+            .apply()
+    }
+
     fun canShowBlock(
         context: Context,
         packageName: String,
@@ -87,6 +98,11 @@ object DemoBlockPrefs {
         cooldownMillis: Long = 3_500L,
     ): Boolean {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val suppressedUntil = prefs.getLong(KEY_SUPPRESS_UNTIL_PREFIX + packageName, 0L)
+        if (suppressedUntil > atMillis) {
+            prefs.edit().putString(KEY_LAST_SKIP_REASON, "cancel_suppress_active:$source").apply()
+            return false
+        }
         val lastPackage = prefs.getString(KEY_LAST_TRIGGER_PACKAGE, null)
         val lastAt = prefs.getLong(KEY_LAST_TRIGGER_AT, 0L)
         if (lastPackage == packageName && atMillis - lastAt in 0 until cooldownMillis) {
