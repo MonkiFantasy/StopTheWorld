@@ -37,6 +37,7 @@ class FloatingReminderService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        DemoBlockPrefs.markSkip(this, "floating_service_created")
         startForeground(NOTIFICATION_ID, notification())
         startPolling()
     }
@@ -80,8 +81,14 @@ class FloatingReminderService : Service() {
             DemoBlockPrefs.markSkip(this, "overlay_permission_missing")
             return
         }
-        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
-        val fg = latestForegroundPackage() ?: return
+        val restricted = DemoBlockPrefs.restrictedPackage(this) ?: run {
+            DemoBlockPrefs.markSkip(this, "monitor_running_no_restricted")
+            return
+        }
+        val fg = latestForegroundPackage() ?: run {
+            DemoBlockPrefs.markSkip(this, "monitor_running_fg_null")
+            return
+        }
         if (fg != lastForegroundPackage) {
             lastForegroundPackage = fg
             DemoBlockPrefs.markSeen(this, fg)
@@ -100,7 +107,9 @@ class FloatingReminderService : Service() {
     private fun latestForegroundPackage(): String? = runCatching {
         val usm = getSystemService(USAGE_STATS_SERVICE) as UsageStatsManager
         val end = System.currentTimeMillis()
-        val events = usm.queryEvents(end - 1_500L, end)
+        val start = end - 15_000L
+
+        val events = usm.queryEvents(start, end)
         val event = UsageEvents.Event()
         var pkg: String? = null
         var ts = 0L
@@ -111,7 +120,15 @@ class FloatingReminderService : Service() {
                 ts = event.timeStamp
             }
         }
-        pkg
+        if (pkg != null) return@runCatching pkg
+
+        // Fallback for devices/OEMs where queryEvents is delayed or sparse.
+        usm.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, start, end)
+            .orEmpty()
+            .maxByOrNull { it.lastTimeUsed }
+            ?.packageName
+    }.onFailure {
+        DemoBlockPrefs.markSkip(this, "fg_error:${it.javaClass.simpleName}")
     }.getOrNull()
 
     private fun showOverlay(packageName: String, appLabel: String) {
@@ -296,7 +313,7 @@ class FloatingReminderService : Service() {
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 
     companion object {
-        private const val POLL_MS = 250L
+        private const val POLL_MS = 500L
         private const val NOTIFICATION_ID = 4301
         const val ACTION_STOP = "dev.stw.blocking.STOP_FLOATING_REMINDER"
     }
