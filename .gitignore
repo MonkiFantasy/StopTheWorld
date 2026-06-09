@@ -1,0 +1,25 @@
+# Gradle / Android
+.gradle/
+build/
+**/build/
+local.properties
+.cxx/
+.externalNativeBuild/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+
+# OS / logs
+.DS_Store
+*.log
+
+# Signing / secrets
+*.jks
+*.keystore
+*.p12
+secrets.properties
+
+# Generated APK/AAB outputs
+*.apk
+*.aab
