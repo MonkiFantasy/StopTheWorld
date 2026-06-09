@@ -9,8 +9,11 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -28,8 +31,10 @@ import androidx.compose.material3.ElevatedAssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -49,6 +54,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +72,29 @@ import dev.stw.usage.formatTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+
+
+private val NeonDarkColors = darkColorScheme(
+    background = Color(0xFF05060A),
+    surface = Color(0xFF0B1020),
+    surfaceVariant = Color(0xFF151B2E),
+    primary = Color(0xFF7DD3FC),
+    primaryContainer = Color(0xFF0F2A44),
+    secondary = Color(0xFFC084FC),
+    secondaryContainer = Color(0xFF2A1746),
+    tertiary = Color(0xFF5EEAD4),
+    tertiaryContainer = Color(0xFF123C3A),
+    onBackground = Color(0xFFE5E7EB),
+    onSurface = Color(0xFFEFF6FF),
+    onSurfaceVariant = Color(0xFFC7D2FE),
+    onPrimary = Color(0xFF06121F),
+    onSecondary = Color(0xFF16051F),
+    onTertiary = Color(0xFF031A17),
+)
+
+private val NeonBorderBrush = Brush.linearGradient(
+    listOf(Color(0xFF22D3EE), Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFFFACC15)),
+)
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatching {
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -118,8 +147,8 @@ fun StopTheWorldDemoApp(
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
 ) {
-    MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
+    MaterialTheme(colorScheme = NeonDarkColors) {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             DemoHome(
                 onOpenUsageAccess = onOpenUsageAccess,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
@@ -191,29 +220,43 @@ private fun DemoHome(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar {
-                listOf("首页", "分组", "应用", "测试").forEachIndexed { index, label ->
-                    NavigationBarItem(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        icon = {},
-                        label = { Text(label) },
-                    )
+    val tabs = listOf("首页" to "✦", "分组" to "◈", "应用" to "⬢", "测试" to "⚡")
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xFF02030A), Color(0xFF070B18), Color(0xFF0C0615)),
+                ),
+            ),
+    ) {
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                NavigationBar(
+                    containerColor = Color(0xF20A0E1A),
+                    tonalElevation = 10.dp,
+                ) {
+                    tabs.forEachIndexed { index, item ->
+                        NavigationBarItem(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            icon = { Text(item.second, color = if (selectedTab == index) Color(0xFF67E8F9) else Color(0xFF94A3B8)) },
+                            label = { Text(item.first) },
+                        )
+                    }
                 }
-            }
-        },
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("时停 Stop the World", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            },
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("时停 Stop the World", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color(0xFFF8FAFC))
             when (selectedTab) {
                 0 -> {
                     StatusCard(
@@ -334,6 +377,7 @@ private fun DemoHome(
                     )
                 }
             }
+            }
         }
     }
 
@@ -358,9 +402,13 @@ private fun StatusCard(
     onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = Color(0xE6121730)),
+        border = BorderStroke(1.dp, NeonBorderBrush),
+        shape = RoundedCornerShape(24.dp),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("状态总览", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("状态总览", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Color(0xFFE0F2FE))
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip("Usage", hasUsageAccess)
                 StatusChip("悬浮窗", hasOverlayPermission)
@@ -369,14 +417,14 @@ private fun StatusCard(
                 StatusChip("省电白名单", ignoresBatteryOptimization)
                 StatusChip("目标App", totalRestrictedApps > 0)
             }
-            Text("当前目标 App：$totalRestrictedApps 个。权限/状态收进下方二级菜单，日常只保留监控开关。")
+            Text("$totalRestrictedApps 个目标 App · 日常只保留监控开关", color = Color(0xFFCBD5E1))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控") }
                 OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底") }
             }
             OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置") }
             if (showDetails) {
-                Text("建议：后台省电设为无限制/不优化，同时开启无障碍和兜底监控。")
+                Text("建议开启 Usage/悬浮窗/无障碍，并将省电设为不优化。", color = Color(0xFFCBD5E1))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
                     Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
@@ -391,8 +439,8 @@ private fun StatusCard(
 
 @Composable
 private fun StatusChip(label: String, ok: Boolean) {
-    val bg = if (ok) Color(0xFFD1FAE5) else Color(0xFFFEE2E2)
-    val fg = if (ok) Color(0xFF065F46) else Color(0xFF991B1B)
+    val bg = if (ok) Color(0xFF123C3A) else Color(0xFF3A1420)
+    val fg = if (ok) Color(0xFF6EE7B7) else Color(0xFFFDA4AF)
     ElevatedAssistChip(
         onClick = {},
         label = { Text("${if (ok) "✓" else "!"} $label") },
@@ -425,9 +473,9 @@ private fun IntentConfigCard(
     onIntentTextChange: (String) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111118))) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("打开 App 是为了什么？", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+            Text("全局目的模板", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = Color(0xFF67E8F9))
             Text("自定义意图选项，用逗号分隔。弹窗会让你选择一个意图，继续后顶部小悬浮窗会显示当前意图。")
             OutlinedTextField(
                 value = intentText,
@@ -517,10 +565,13 @@ private fun GroupManagementCard(
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
     onRemoveApp: (String, String) -> Unit,
 ) {
+    val selectedGroup = groups.firstOrNull { it.id == selectedGroupId } ?: groups.firstOrNull()
+    var detailPanel by remember(selectedGroup?.id) { mutableStateOf("settings") }
+
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("分组管理", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text("一个分组可以包含多个目标 App。当前触发逻辑会匹配所有分组里的 App。")
+            Text("左侧像抽屉菜单一样只选分组；右侧二级菜单再管理设置/App，避免所有分组同时长展开。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = newGroupName,
@@ -532,55 +583,155 @@ private fun GroupManagementCard(
             }
             if (groups.isEmpty()) {
                 Text("暂无分组。先添加一个分组，例如：学习、娱乐、社交。")
+            } else {
+                Text("分组抽屉", fontWeight = FontWeight.SemiBold)
             }
+
             groups.forEach { group ->
-                var editName by remember(group.id, group.name) { mutableStateOf(group.name) }
-                var limitText by remember(group.id, group.dailyLimitMinutes) { mutableStateOf(if (group.dailyLimitMinutes > 0) group.dailyLimitMinutes.toString() else "") }
-                var typedPurpose by remember(group.id, group.requireTypedPurpose) { mutableStateOf(group.requireTypedPurpose) }
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            Button(onClick = { onSelectedGroupChange(group.id) }, modifier = Modifier.weight(1f)) {
-                                Text(if (group.id == selectedGroupId) "✓ ${group.name}" else group.name)
-                            }
-                            OutlinedButton(onClick = { onDeleteGroup(group.id) }) { Text("删除") }
+                GroupDrawerRow(
+                    group = group,
+                    selected = group.id == selectedGroup?.id,
+                    onClick = {
+                        onSelectedGroupChange(group.id)
+                        detailPanel = "settings"
+                    },
+                )
+            }
+
+            selectedGroup?.let { group ->
+                HorizontalDivider()
+                Text("当前：${group.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "${group.apps.size} 个 App · " +
+                        if (group.dailyLimitMinutes > 0) "限时 ${group.dailyLimitMinutes} 分钟" else "不限时",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { detailPanel = "settings" },
+                        modifier = Modifier.weight(1f),
+                    ) { Text(if (detailPanel == "settings") "✓ 设置" else "设置") }
+                    OutlinedButton(
+                        onClick = { detailPanel = "apps" },
+                        modifier = Modifier.weight(1f),
+                    ) { Text(if (detailPanel == "apps") "✓ App" else "App") }
+                }
+
+                when (detailPanel) {
+                    "apps" -> GroupAppsPanel(group = group, onRemoveApp = onRemoveApp)
+                    else -> GroupSettingsPanel(
+                        group = group,
+                        onDeleteGroup = onDeleteGroup,
+                        onUpdateGroup = onUpdateGroup,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupDrawerRow(
+    group: RestrictedGroup,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val containerColor = if (selected) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = containerColor),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (selected) "› ${group.name}" else group.name, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "${group.apps.size} 个 App · " +
+                        if (group.dailyLimitMinutes > 0) "${group.dailyLimitMinutes} 分钟/天" else "不限时",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(if (selected) "已选中" else "进入", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+}
+
+@Composable
+private fun GroupSettingsPanel(
+    group: RestrictedGroup,
+    onDeleteGroup: (String) -> Unit,
+    onUpdateGroup: (String, String, Int, Boolean) -> Unit,
+) {
+    var editName by remember(group.id, group.name) { mutableStateOf(group.name) }
+    var limitText by remember(group.id, group.dailyLimitMinutes) {
+        mutableStateOf(if (group.dailyLimitMinutes > 0) group.dailyLimitMinutes.toString() else "")
+    }
+    var typedPurpose by remember(group.id, group.requireTypedPurpose) { mutableStateOf(group.requireTypedPurpose) }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("二级菜单：分组设置", fontWeight = FontWeight.SemiBold)
+            OutlinedTextField(
+                value = editName,
+                onValueChange = { editName = it },
+                label = { Text("分组名") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = limitText,
+                onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
+                label = { Text("每日使用超过多少分钟后提示超时；空/0=不限") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("自定义目的输入", fontWeight = FontWeight.SemiBold)
+                    Text("开启后，这个分组内 App 弹窗不显示目的选项，而要求用户自己输入。", style = MaterialTheme.typography.bodySmall)
+                }
+                Switch(checked = typedPurpose, onCheckedChange = { typedPurpose = it })
+            }
+            Button(
+                onClick = { onUpdateGroup(group.id, editName, limitText.toIntOrNull() ?: 0, typedPurpose) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("保存分组设置") }
+            OutlinedButton(onClick = { onDeleteGroup(group.id) }, modifier = Modifier.fillMaxWidth()) {
+                Text("删除这个分组")
+            }
+        }
+    }
+}
+
+@Composable
+private fun GroupAppsPanel(
+    group: RestrictedGroup,
+    onRemoveApp: (String, String) -> Unit,
+) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("二级菜单：组内 App", fontWeight = FontWeight.SemiBold)
+            if (group.apps.isEmpty()) {
+                Text("这个分组还没有 App。保持选中当前分组后，到“应用”页添加。")
+            } else {
+                group.apps.forEachIndexed { index, app ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text(app.label, fontWeight = FontWeight.SemiBold)
+                            Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                         }
-                        OutlinedTextField(
-                            value = editName,
-                            onValueChange = { editName = it },
-                            label = { Text("分组名") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = limitText,
-                            onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
-                            label = { Text("每日使用超过多少分钟后提示超时；空/0=不限") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.weight(1f)) {
-                                Text("自定义目的输入", fontWeight = FontWeight.SemiBold)
-                                Text("开启后，这个分组内 App 弹窗不显示目的选项，而要求用户自己输入。", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Switch(checked = typedPurpose, onCheckedChange = { typedPurpose = it })
-                        }
-                        Button(
-                            onClick = { onUpdateGroup(group.id, editName, limitText.toIntOrNull() ?: 0, typedPurpose) },
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("保存分组设置") }
-                        if (group.apps.isEmpty()) {
-                            Text("这个分组还没有 App。点上面的分组按钮选中后，在下方添加。")
-                        } else {
-                            group.apps.forEach { app ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(app.label, fontWeight = FontWeight.SemiBold)
-                                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    OutlinedButton(onClick = { onRemoveApp(group.id, app.packageName) }) { Text("移除") }
-                                }
-                            }
-                        }
+                        OutlinedButton(onClick = { onRemoveApp(group.id, app.packageName) }) { Text("移除") }
+                    }
+                    if (index != group.apps.lastIndex) {
+                        HorizontalDivider()
                     }
                 }
             }
