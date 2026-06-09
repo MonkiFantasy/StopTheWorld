@@ -150,8 +150,8 @@ class FloatingReminderService : Service() {
         overlayPackage = packageName
         val group = DemoBlockPrefs.groupForPackage(this, packageName)
         val overLimit = group?.let { DemoBlockPrefs.isGroupOverLimit(this, it) } == true
-        val requireTypedPurpose = group?.requireTypedPurpose == true
-        val intents = DemoBlockPrefs.intents(this)
+        val requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName)
+        val intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName)
         var selectedIntent: String? = intents.firstOrNull()
         var typedPurpose: EditText? = null
         val root = LinearLayout(this).apply {

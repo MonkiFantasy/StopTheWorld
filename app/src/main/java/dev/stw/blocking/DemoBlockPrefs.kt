@@ -49,6 +49,27 @@ object DemoBlockPrefs {
 
     fun labelForPackage(context: Context, packageName: String): String? = restrictedApps(context).firstOrNull { it.packageName == packageName }?.label
 
+    fun entryForPackage(context: Context, packageName: String): RestrictedAppEntry? = groups(context).flatMap { it.apps }.firstOrNull { it.packageName == packageName }
+
+    fun purposeOptionsForPackage(context: Context, packageName: String): List<String> {
+        val appOptions = entryForPackage(context, packageName)?.purposeOptions.orEmpty().filter { it.isNotBlank() }
+        return appOptions.ifEmpty { intents(context) }
+    }
+
+    fun requireTypedPurposeForPackage(context: Context, packageName: String): Boolean {
+        val app = entryForPackage(context, packageName)
+        return app?.requireTypedPurpose ?: (groupForPackage(context, packageName)?.requireTypedPurpose == true)
+    }
+
+    fun updateAppPurpose(context: Context, packageName: String, purposeOptions: List<String>, requireTypedPurpose: Boolean?) {
+        val cleaned = purposeOptions.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(8)
+        setGroups(context, groups(context).map { group ->
+            group.copy(apps = group.apps.map { app ->
+                if (app.packageName == packageName) app.copy(purposeOptions = cleaned, requireTypedPurpose = requireTypedPurpose) else app
+            })
+        })
+    }
+
     fun groupForPackage(context: Context, packageName: String): RestrictedGroup? = groups(context).firstOrNull { group -> group.apps.any { it.packageName == packageName } }
 
     fun groupUsageTodayMillis(context: Context, group: RestrictedGroup): Long = runCatching {
@@ -138,7 +159,14 @@ object DemoBlockPrefs {
                     for (j in 0 until appsArray.length()) {
                         val app = appsArray.getJSONObject(j)
                         val pkg = app.optString("packageName")
-                        if (pkg.isNotBlank()) add(RestrictedAppEntry(pkg, app.optString("label", pkg)))
+                        if (pkg.isNotBlank()) {
+                            val purposeArray = app.optJSONArray("purposeOptions") ?: JSONArray()
+                            val purposeOptions = buildList {
+                                for (k in 0 until purposeArray.length()) purposeArray.optString(k).takeIf { it.isNotBlank() }?.let { add(it) }
+                            }
+                            val requireTyped = if (app.has("requireTypedPurpose")) app.optBoolean("requireTypedPurpose") else null
+                            add(RestrictedAppEntry(pkg, app.optString("label", pkg), purposeOptions, requireTyped))
+                        }
                     }
                 }
                 val id = obj.optString("id").ifBlank { newGroupId() }
@@ -167,6 +195,8 @@ object DemoBlockPrefs {
                         put(JSONObject().apply {
                             put("packageName", app.packageName)
                             put("label", app.label)
+                            put("purposeOptions", JSONArray().apply { app.purposeOptions.forEach { put(it) } })
+                            app.requireTypedPurpose?.let { put("requireTypedPurpose", it) }
                         })
                     }
                 })
@@ -309,6 +339,8 @@ data class DemoDebugState(
 data class RestrictedAppEntry(
     val packageName: String,
     val label: String,
+    val purposeOptions: List<String> = emptyList(),
+    val requireTypedPurpose: Boolean? = null,
 )
 
 data class RestrictedGroup(

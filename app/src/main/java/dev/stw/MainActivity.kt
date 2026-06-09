@@ -31,7 +31,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -154,6 +157,8 @@ private fun DemoHome(
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
     var ignoresBatteryOptimization by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var showStatusDetails by remember { mutableStateOf(false) }
     var refreshTick by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -186,126 +191,152 @@ private fun DemoHome(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Text("时停 Stop the World", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("复杂 Demo：Usage Access 统计今日使用数据，并通过 AccessibilityService 在真实打开受限 App 时显示暂停提醒。")
-
-        StatusCard(
-            hasUsageAccess = hasUsageAccess,
-            totalRestrictedApps = groups.sumOf { it.apps.size },
-            onOpenUsageAccess = onOpenUsageAccess,
-            onOpenAccessibilitySettings = onOpenAccessibilitySettings,
-            onOpenOverlaySettings = onOpenOverlaySettings,
-            onOpenBatterySettings = onOpenBatterySettings,
-            onStartFloatingMonitor = onStartFloatingMonitor,
-            onStopFloatingMonitor = onStopFloatingMonitor,
-            hasOverlayPermission = hasOverlayPermission,
-            hasAccessibility = hasAccessibility,
-            hasFloatingRunning = hasFloatingRunning,
-            ignoresBatteryOptimization = ignoresBatteryOptimization,
-            onRefresh = { refreshTick++ },
-        )
-
-        GroupManagementCard(
-            groups = groups,
-            selectedGroupId = selectedGroupId,
-            newGroupName = newGroupName,
-            onSelectedGroupChange = { selectedGroupId = it },
-            onNewGroupNameChange = { newGroupName = it },
-            onCreateGroup = {
-                val group = DemoBlockPrefs.addGroup(context, newGroupName)
-                groups = DemoBlockPrefs.groups(context)
-                selectedGroupId = group.id
-                newGroupName = ""
-            },
-            onDeleteGroup = { groupId ->
-                DemoBlockPrefs.deleteGroup(context, groupId)
-                groups = DemoBlockPrefs.groups(context)
-                selectedGroupId = groups.firstOrNull()?.id ?: "default"
-                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
-                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
-            },
-            onUpdateGroup = { groupId, name, limit, typed ->
-                DemoBlockPrefs.updateGroup(context, groupId, name, limit, typed)
-                groups = DemoBlockPrefs.groups(context)
-            },
-            onRemoveApp = { groupId, packageName ->
-                DemoBlockPrefs.removeAppFromGroup(context, groupId, packageName)
-                groups = DemoBlockPrefs.groups(context)
-                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
-                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
-            },
-        )
-
-        RestrictedAppPicker(
-            usageRows = usageRows,
-            launchableApps = launchableApps,
-            currentPackages = groups.flatMap { it.apps }.map { it.packageName }.toSet(),
-            selectedGroupName = groups.firstOrNull { it.id == selectedGroupId }?.name ?: "默认分组",
-            onSelect = { packageName, label ->
-                val target = groups.firstOrNull { it.id == selectedGroupId } ?: DemoBlockPrefs.addGroup(context, "默认分组")
-                DemoBlockPrefs.addAppToGroup(context, target.id, packageName, label)
-                groups = DemoBlockPrefs.groups(context)
-                selectedGroupId = target.id
-                restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
-                restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
-            },
-        )
-
-        TestAndDebugCard(
-            groups = groups,
-            debugState = debugState,
-            onOpenFirstRestrictedApp = {
-                val pkg = groups.flatMap { it.apps }.firstOrNull()?.packageName
-                val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
-                if (launch != null) {
-                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(launch)
+    Scaffold(
+        bottomBar = {
+            NavigationBar {
+                listOf("首页", "分组", "应用", "测试").forEachIndexed { index, label ->
+                    NavigationBarItem(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        icon = {},
+                        label = { Text(label) },
+                    )
                 }
-            },
-            onRefresh = { refreshTick++ },
-        )
-
-        IntentConfigCard(
-            intentText = intentText,
-            onIntentTextChange = { intentText = it },
-            onSave = {
-                DemoBlockPrefs.setIntents(context, intentText.split('，', ',', '|', '\n'))
-                intentText = DemoBlockPrefs.intents(context).joinToString("，")
-            },
-        )
-
-        UsageStatsCard(usageRows = usageRows)
-
-
-        RuleCard(
-            rule = AppRule(
-                packageName = restrictedPackage ?: "demo.app",
-                appLabel = restrictedLabel ?: "示例 App",
-                customMessage = "你现在是真的需要打开，还是只是习惯性点开？",
-            ),
-            state = AppRuntimeState(
-                packageName = restrictedPackage ?: "demo.app",
-                usedTodayMillis = usageRows.firstOrNull { it.packageName == restrictedPackage }?.usedMillis ?: 18 * 60_000L,
-                openCountToday = usageRows.firstOrNull { it.packageName == restrictedPackage }?.openCount ?: 3,
-            ),
-        )
-
-        FirstOpenInterventionCard(
-            rule = AppRule(
-                packageName = restrictedPackage ?: "demo.app",
-                appLabel = restrictedLabel ?: "示例 App",
-                delayBeforeOpenSeconds = 10,
-                customMessage = "真实流程：开启无障碍服务后，打开你选择的 App 会弹出类似页面。",
-            ),
-            decision = Decision.ShowDelay(10, 5, "真实流程：开启无障碍服务后，打开你选择的 App 会弹出类似页面。"),
-        )
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("时停 Stop the World", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            when (selectedTab) {
+                0 -> {
+                    StatusCard(
+                        hasUsageAccess = hasUsageAccess,
+                        totalRestrictedApps = groups.sumOf { it.apps.size },
+                        onOpenUsageAccess = onOpenUsageAccess,
+                        onOpenAccessibilitySettings = onOpenAccessibilitySettings,
+                        onOpenOverlaySettings = onOpenOverlaySettings,
+                        onOpenBatterySettings = onOpenBatterySettings,
+                        onStartFloatingMonitor = onStartFloatingMonitor,
+                        onStopFloatingMonitor = onStopFloatingMonitor,
+                        hasOverlayPermission = hasOverlayPermission,
+                        hasAccessibility = hasAccessibility,
+                        hasFloatingRunning = hasFloatingRunning,
+                        ignoresBatteryOptimization = ignoresBatteryOptimization,
+                        showDetails = showStatusDetails,
+                        onToggleDetails = { showStatusDetails = !showStatusDetails },
+                        onRefresh = { refreshTick++ },
+                    )
+                    IntentConfigCard(
+                        intentText = intentText,
+                        onIntentTextChange = { intentText = it },
+                        onSave = {
+                            DemoBlockPrefs.setIntents(context, intentText.split('，', ',', '|', '\n'))
+                            intentText = DemoBlockPrefs.intents(context).joinToString("，")
+                        },
+                    )
+                }
+                1 -> GroupManagementCard(
+                    groups = groups,
+                    selectedGroupId = selectedGroupId,
+                    newGroupName = newGroupName,
+                    onSelectedGroupChange = { selectedGroupId = it },
+                    onNewGroupNameChange = { newGroupName = it },
+                    onCreateGroup = {
+                        val group = DemoBlockPrefs.addGroup(context, newGroupName)
+                        groups = DemoBlockPrefs.groups(context)
+                        selectedGroupId = group.id
+                        newGroupName = ""
+                    },
+                    onDeleteGroup = { groupId ->
+                        DemoBlockPrefs.deleteGroup(context, groupId)
+                        groups = DemoBlockPrefs.groups(context)
+                        selectedGroupId = groups.firstOrNull()?.id ?: "default"
+                        restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                        restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+                    },
+                    onUpdateGroup = { groupId, name, limit, typed ->
+                        DemoBlockPrefs.updateGroup(context, groupId, name, limit, typed)
+                        groups = DemoBlockPrefs.groups(context)
+                    },
+                    onRemoveApp = { groupId, packageName ->
+                        DemoBlockPrefs.removeAppFromGroup(context, groupId, packageName)
+                        groups = DemoBlockPrefs.groups(context)
+                        restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                        restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+                    },
+                )
+                2 -> {
+                    RestrictedAppPicker(
+                        usageRows = usageRows,
+                        launchableApps = launchableApps,
+                        currentPackages = groups.flatMap { it.apps }.map { it.packageName }.toSet(),
+                        selectedGroupName = groups.firstOrNull { it.id == selectedGroupId }?.name ?: "默认分组",
+                        onSelect = { packageName, label ->
+                            val target = groups.firstOrNull { it.id == selectedGroupId } ?: DemoBlockPrefs.addGroup(context, "默认分组")
+                            DemoBlockPrefs.addAppToGroup(context, target.id, packageName, label)
+                            groups = DemoBlockPrefs.groups(context)
+                            selectedGroupId = target.id
+                            restrictedPackage = DemoBlockPrefs.restrictedPackage(context)
+                            restrictedLabel = DemoBlockPrefs.restrictedLabel(context)
+                        },
+                    )
+                    AppPurposeConfigCard(
+                        groups = groups,
+                        selectedGroupId = selectedGroupId,
+                        onSave = { packageName, options, typed ->
+                            DemoBlockPrefs.updateAppPurpose(context, packageName, options.split('，', ',', '|', '\n'), typed)
+                            groups = DemoBlockPrefs.groups(context)
+                        },
+                    )
+                    UsageStatsCard(usageRows = usageRows)
+                }
+                3 -> {
+                    TestAndDebugCard(
+                        groups = groups,
+                        debugState = debugState,
+                        onOpenFirstRestrictedApp = {
+                            val pkg = groups.flatMap { it.apps }.firstOrNull()?.packageName
+                            val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                            if (launch != null) {
+                                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                context.startActivity(launch)
+                            }
+                        },
+                        onRefresh = { refreshTick++ },
+                    )
+                    RuleCard(
+                        rule = AppRule(
+                            packageName = restrictedPackage ?: "demo.app",
+                            appLabel = restrictedLabel ?: "示例 App",
+                            customMessage = "你现在是真的需要打开，还是只是习惯性点开？",
+                        ),
+                        state = AppRuntimeState(
+                            packageName = restrictedPackage ?: "demo.app",
+                            usedTodayMillis = usageRows.firstOrNull { it.packageName == restrictedPackage }?.usedMillis ?: 18 * 60_000L,
+                            openCountToday = usageRows.firstOrNull { it.packageName == restrictedPackage }?.openCount ?: 3,
+                        ),
+                    )
+                    FirstOpenInterventionCard(
+                        rule = AppRule(
+                            packageName = restrictedPackage ?: "demo.app",
+                            appLabel = restrictedLabel ?: "示例 App",
+                            delayBeforeOpenSeconds = 10,
+                            customMessage = "真实流程：开启无障碍服务后，打开你选择的 App 会弹出类似页面。",
+                        ),
+                        decision = Decision.ShowDelay(10, 5, "真实流程：开启无障碍服务后，打开你选择的 App 会弹出类似页面。"),
+                    )
+                }
+            }
+        }
     }
+
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -323,6 +354,8 @@ private fun StatusCard(
     hasAccessibility: Boolean,
     hasFloatingRunning: Boolean,
     ignoresBatteryOptimization: Boolean,
+    showDetails: Boolean,
+    onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -336,19 +369,22 @@ private fun StatusCard(
                 StatusChip("省电白名单", ignoresBatteryOptimization)
                 StatusChip("目标App", totalRestrictedApps > 0)
             }
-            Text("当前目标 App：$totalRestrictedApps 个，分组管理在下方；这里保留日常使用所需权限和监控开关。")
-            Text("推荐：把时停的后台省电策略改成“无限制/不优化”，再同时开启无障碍和兜底监控；两路信号共用触发锁，不会双弹。")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
-                Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
-                Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍") }
-            }
-            OutlinedButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("省电策略：设为无限制/不优化") }
+            Text("当前目标 App：$totalRestrictedApps 个。权限/状态收进下方二级菜单，日常只保留监控开关。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控") }
                 OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底") }
             }
-            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新使用状态") }
+            OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置") }
+            if (showDetails) {
+                Text("建议：后台省电设为无限制/不优化，同时开启无障碍和兜底监控。")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
+                    Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
+                    Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍") }
+                }
+                OutlinedButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("省电策略：设为无限制/不优化") }
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态") }
+            }
         }
     }
 }
@@ -400,6 +436,49 @@ private fun IntentConfigCard(
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项") }
+        }
+    }
+}
+
+
+@Composable
+private fun AppPurposeConfigCard(
+    groups: List<RestrictedGroup>,
+    selectedGroupId: String,
+    onSave: (String, String, Boolean?) -> Unit,
+) {
+    val apps = groups.firstOrNull { it.id == selectedGroupId }?.apps ?: groups.flatMap { it.apps }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("应用级目的配置", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("可针对某个应用覆盖目的选项；打开该应用时优先使用这里的设置。")
+            if (apps.isEmpty()) {
+                Text("当前分组暂无 App。先在上方添加目标 App。")
+            }
+            apps.forEach { app ->
+                var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
+                var typed by remember(app.packageName, app.requireTypedPurpose) { mutableStateOf(app.requireTypedPurpose == true) }
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(app.label, fontWeight = FontWeight.Bold)
+                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
+                        OutlinedTextField(
+                            value = options,
+                            onValueChange = { options = it },
+                            label = { Text("该应用目的选项，空=使用全局目的") },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text("该应用要求手动输入目的")
+                                Text("关闭则显示上面的目的选项；空选项时使用全局目的。", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Switch(checked = typed, onCheckedChange = { typed = it })
+                        }
+                        Button(onClick = { onSave(app.packageName, options, typed) }, modifier = Modifier.fillMaxWidth()) { Text("保存这个应用") }
+                    }
+                }
+            }
         }
     }
 }
