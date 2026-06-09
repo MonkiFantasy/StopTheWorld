@@ -46,6 +46,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString()?.takeIf { it.isNotBlank() } ?: return
         if (packageName == applicationContext.packageName) return
 
+        if (DemoBlockPrefs.isFloatingRunning(this)) return
         val restricted = DemoBlockPrefs.restrictedPackage(this) ?: return
         if (packageName != restricted) return
 

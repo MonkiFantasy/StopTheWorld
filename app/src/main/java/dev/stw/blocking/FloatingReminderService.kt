@@ -37,6 +37,7 @@ class FloatingReminderService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        DemoBlockPrefs.setFloatingRunning(this, true)
         DemoBlockPrefs.markSkip(this, "floating_service_created")
         startForeground(NOTIFICATION_ID, notification())
         startPolling()
@@ -57,6 +58,7 @@ class FloatingReminderService : Service() {
         stopPolling()
         hideOverlay()
         hideMini()
+        DemoBlockPrefs.setFloatingRunning(this, false)
         super.onDestroy()
     }
 

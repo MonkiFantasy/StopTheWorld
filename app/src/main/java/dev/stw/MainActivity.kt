@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
                 },
                 onStopFloatingMonitor = {
                     stopService(Intent(this, FloatingReminderService::class.java))
+                    DemoBlockPrefs.setFloatingRunning(this, false)
                 },
             )
         }
@@ -154,6 +155,14 @@ private fun DemoHome(
             onStartFloatingMonitor = onStartFloatingMonitor,
             onStopFloatingMonitor = onStopFloatingMonitor,
             hasOverlayPermission = hasOverlayPermission,
+            onOpenRestrictedApp = {
+                val pkg = restrictedPackage
+                val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
+                if (launch != null) {
+                    launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(launch)
+                }
+            },
             onRefresh = { refreshTick++ },
         )
 
@@ -222,6 +231,7 @@ private fun StatusCard(
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
     hasOverlayPermission: Boolean,
+    onOpenRestrictedApp: () -> Unit,
     onRefresh: () -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
@@ -229,6 +239,7 @@ private fun StatusCard(
             Text("Demo 状态", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
             Text("Usage Access：${if (hasUsageAccess) "已授权" else "未授权"}")
             Text("悬浮窗权限：${if (hasOverlayPermission) "已授权" else "未授权"}")
+            Text("极速监控：${if (DemoBlockPrefs.isFloatingRunning(LocalContext.current)) "运行中" else "未运行"}")
             Text("当前受限 App：${restrictedLabel ?: "未选择"}${restrictedPackage?.let { " ($it)" } ?: ""}")
             Text("推荐流程：Usage Access + 悬浮窗权限 → 选择受限 App → 启动极速监控 → 打开目标 App。无障碍服务保留为辅助。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
@@ -239,7 +250,8 @@ private fun StatusCard(
                 Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动极速监控") }
                 OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止") }
             }
-            OutlinedButton(onClick = onOpenAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text("无障碍服务（辅助方案）") }
+            Button(onClick = onOpenRestrictedApp, enabled = restrictedPackage != null, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开受限 App") }
+            OutlinedButton(onClick = onOpenAccessibilitySettings, modifier = Modifier.fillMaxWidth()) { Text("无障碍服务（辅助方案，极速监控运行时不会弹窗）") }
             OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新统计/规则") }
         }
     }
@@ -255,6 +267,7 @@ private fun DebugCard(debugState: DemoDebugState) {
             Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
             Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
             Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
+            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
             Text("极速逻辑：只监听 TYPE_WINDOW_STATE_CHANGED，notificationTimeout=0，命中 event.packageName 后立即显示 Accessibility Overlay；调试写入已节流。")
         }
     }

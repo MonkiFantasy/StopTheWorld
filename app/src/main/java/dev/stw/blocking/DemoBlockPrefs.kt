@@ -15,6 +15,7 @@ object DemoBlockPrefs {
     private const val KEY_LAST_TRIGGER_AT = "last_trigger_at"
     private const val KEY_LAST_SKIP_REASON = "last_skip_reason"
     private const val KEY_INTENTS = "custom_intents"
+    private const val KEY_FLOATING_RUNNING = "floating_running"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
@@ -54,6 +55,16 @@ object DemoBlockPrefs {
             .putString(KEY_INTENTS, cleaned.ifEmpty { DEFAULT_INTENTS.split('|') }.joinToString("|"))
             .apply()
     }
+
+    fun setFloatingRunning(context: Context, running: Boolean) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_FLOATING_RUNNING, running)
+            .putString(KEY_LAST_SKIP_REASON, if (running) "floating_monitor_running" else "floating_monitor_stopped")
+            .apply()
+    }
+
+    fun isFloatingRunning(context: Context): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(KEY_FLOATING_RUNNING, false)
 
     fun setUnlockUntil(context: Context, packageName: String, untilMillis: Long, intent: String?) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
@@ -101,6 +112,7 @@ object DemoBlockPrefs {
             lastTriggerPackage = prefs.getString(KEY_LAST_TRIGGER_PACKAGE, null),
             lastTriggerAt = prefs.getLong(KEY_LAST_TRIGGER_AT, 0L),
             lastSkipReason = prefs.getString(KEY_LAST_SKIP_REASON, null),
+            floatingRunning = prefs.getBoolean(KEY_FLOATING_RUNNING, false),
         )
     }
 }
@@ -111,4 +123,5 @@ data class DemoDebugState(
     val lastTriggerPackage: String?,
     val lastTriggerAt: Long,
     val lastSkipReason: String?,
+    val floatingRunning: Boolean,
 )
