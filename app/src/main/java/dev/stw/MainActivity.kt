@@ -3,6 +3,8 @@ package dev.stw
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
+import android.content.Context
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -60,6 +62,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
+private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatching {
+    val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+    Build.VERSION.SDK_INT < 23 || powerManager.isIgnoringBatteryOptimizations(context.packageName)
+}.getOrDefault(false)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -74,6 +81,15 @@ class MainActivity : ComponentActivity() {
                             Uri.parse("package:$packageName"),
                         ),
                     )
+                },
+                onOpenBatterySettings = {
+                    val request = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    runCatching { startActivity(request) }.getOrElse { startActivity(details) }
                 },
                 onStartFloatingMonitor = {
                     val service = Intent(this, FloatingReminderService::class.java)
@@ -93,6 +109,7 @@ fun StopTheWorldDemoApp(
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
 ) {
@@ -102,6 +119,7 @@ fun StopTheWorldDemoApp(
                 onOpenUsageAccess = onOpenUsageAccess,
                 onOpenAccessibilitySettings = onOpenAccessibilitySettings,
                 onOpenOverlaySettings = onOpenOverlaySettings,
+                onOpenBatterySettings = onOpenBatterySettings,
                 onStartFloatingMonitor = onStartFloatingMonitor,
                 onStopFloatingMonitor = onStopFloatingMonitor,
             )
@@ -114,6 +132,7 @@ private fun DemoHome(
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
 ) {
@@ -129,6 +148,7 @@ private fun DemoHome(
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
+    var ignoresBatteryOptimization by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
     var refreshTick by remember { mutableIntStateOf(0) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -143,6 +163,7 @@ private fun DemoHome(
             hasOverlayPermission = Settings.canDrawOverlays(context)
             hasAccessibility = AccessibilityStatus.isServiceEnabled(context)
             hasFloatingRunning = DemoBlockPrefs.isFloatingRunning(context)
+            ignoresBatteryOptimization = isIgnoringBatteryOptimizations(context)
             intentText = DemoBlockPrefs.intents(context).joinToString("，")
         }
     }
@@ -174,11 +195,13 @@ private fun DemoHome(
             onOpenUsageAccess = onOpenUsageAccess,
             onOpenAccessibilitySettings = onOpenAccessibilitySettings,
             onOpenOverlaySettings = onOpenOverlaySettings,
+            onOpenBatterySettings = onOpenBatterySettings,
             onStartFloatingMonitor = onStartFloatingMonitor,
             onStopFloatingMonitor = onStopFloatingMonitor,
             hasOverlayPermission = hasOverlayPermission,
             hasAccessibility = hasAccessibility,
             hasFloatingRunning = hasFloatingRunning,
+            ignoresBatteryOptimization = ignoresBatteryOptimization,
             onOpenRestrictedApp = {
                 val pkg = restrictedPackage
                 val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
@@ -253,11 +276,13 @@ private fun StatusCard(
     onOpenUsageAccess: () -> Unit,
     onOpenAccessibilitySettings: () -> Unit,
     onOpenOverlaySettings: () -> Unit,
+    onOpenBatterySettings: () -> Unit,
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
     hasOverlayPermission: Boolean,
     hasAccessibility: Boolean,
     hasFloatingRunning: Boolean,
+    ignoresBatteryOptimization: Boolean,
     onOpenRestrictedApp: () -> Unit,
     onRefresh: () -> Unit,
 ) {
@@ -269,15 +294,17 @@ private fun StatusCard(
                 StatusChip("悬浮窗", hasOverlayPermission)
                 StatusChip("无障碍", hasAccessibility)
                 StatusChip("极速监控", hasFloatingRunning)
+                StatusChip("省电白名单", ignoresBatteryOptimization)
                 StatusChip("受限App", restrictedPackage != null)
             }
             Text("当前受限 App：${restrictedLabel ?: "未选择"}${restrictedPackage?.let { " ($it)" } ?: ""}")
-            Text("推荐：要更快更稳，请同时开启无障碍和兜底监控；两路信号共用触发锁，不会双弹。")
+            Text("推荐：把时停的后台省电策略改成“无限制/不优化”，再同时开启无障碍和兜底监控；两路信号共用触发锁，不会双弹。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
                 Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
                 Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍") }
             }
+            OutlinedButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("省电策略：设为无限制/不优化") }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控") }
                 OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底") }
