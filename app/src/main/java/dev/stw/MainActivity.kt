@@ -200,7 +200,7 @@ private fun DebugCard(debugState: DemoDebugState) {
             Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
             Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
             Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
-            Text("如果这里没有变化，说明无障碍服务没有收到窗口事件；如果检测到了目标包但没弹页，通常是后台启动 Activity 被系统拦截，本版已改为 Accessibility Overlay。")
+            Text("极速逻辑：只监听 TYPE_WINDOW_STATE_CHANGED，notificationTimeout=0，命中 event.packageName 后立即显示 Accessibility Overlay；调试写入已节流。")
         }
     }
 }
