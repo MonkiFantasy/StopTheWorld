@@ -154,13 +154,14 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             groupName = group?.name,
             limitSnapshot = DemoBlockPrefs.groupLimitSnapshot(this, packageName, group),
             requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName),
-            intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName),
+            intents = DemoBlockPrefs.rankedPurposeOptionsForPackage(this, packageName),
             onCancel = {
                 DemoBlockPrefs.suppressAfterCancel(this, packageName)
                 hideOverlay()
                 performGlobalAction(GLOBAL_ACTION_HOME)
             },
-            onContinue = { chosen ->
+            onContinue = { chosen, addToPreset ->
+                if (addToPreset && !chosen.isNullOrBlank()) DemoBlockPrefs.addPurposePresetForPackage(this, packageName, chosen)
                 DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
                 hideOverlay()
                 showMini(chosen ?: "有意使用")

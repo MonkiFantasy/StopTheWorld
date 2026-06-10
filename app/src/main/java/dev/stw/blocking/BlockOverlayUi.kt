@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.view.Gravity
 import android.view.View
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -49,7 +50,7 @@ object BlockOverlayUi {
         requireTypedPurpose: Boolean,
         intents: List<String>,
         onCancel: () -> Unit,
-        onContinue: (purpose: String?) -> Unit,
+        onContinue: (purpose: String?, addToPreset: Boolean) -> Unit,
     ): BlockOverlayHandles {
         fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
         fun rounded(color: Int, radiusDp: Int): GradientDrawable =
@@ -58,6 +59,9 @@ object BlockOverlayUi {
         val overLimit = limitSnapshot.overLimit
         var selectedIntent: String? = intents.firstOrNull()
         var typedPurpose: EditText? = null
+        var customPurpose: EditText? = null
+        var addPresetCheck: CheckBox? = null
+        var customMode = requireTypedPurpose
 
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -121,52 +125,126 @@ object BlockOverlayUi {
             8,
         )
 
+        fun newPurposeEditor(): EditText = EditText(context).apply {
+            hint = "输入这次的具体目的"
+            textSize = 14f
+            setSingleLine(false)
+            minLines = 2
+            setPadding(12.dp(), 8.dp(), 12.dp(), 8.dp())
+            background = rounded(fieldBg, 16)
+        }
+
+        addPresetCheck = CheckBox(context).apply {
+            text = "加入目的预设，下次优先显示"
+            textSize = 13f
+            setTextColor(textMuted)
+            isChecked = false
+            setPadding(0, 2.dp(), 0, 0)
+        }
+
         if (requireTypedPurpose) {
-            typedPurpose = EditText(context).apply {
-                hint = "例如：查某个资料 / 回复某个人 / 完成一个任务"
-                textSize = 14f
-                setSingleLine(false)
-                minLines = 2
-                setPadding(12.dp(), 8.dp(), 12.dp(), 8.dp())
-                background = rounded(fieldBg, 16)
-            }
+            typedPurpose = newPurposeEditor().apply { hint = "例如：查某个资料 / 回复某个人 / 完成一个任务" }
             card.addView(typedPurpose)
+            card.addView(addPresetCheck)
         } else {
+            val featured = intents.take(4)
+            val hidden = intents.drop(4)
             val chipViews = mutableListOf<TextView>()
             fun refreshChips() {
                 chipViews.forEach { view ->
                     val raw = view.tag as String
-                    val selected = raw == selectedIntent
+                    val selected = !customMode && raw == selectedIntent
                     view.text = if (selected) "✓ $raw" else raw
                     view.setTextColor(if (selected) onPrimaryContainer else textBody)
                     view.background = rounded(if (selected) primaryContainer else fieldBg, 999)
                 }
             }
-            val chipBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-            intents.chunked(2).forEach { rowItems ->
-                val row = LinearLayout(context).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    setPadding(0, 2.dp(), 0, 2.dp())
-                    clipToPadding = false
+            fun chip(item: String): TextView = TextView(context).apply {
+                gravity = Gravity.CENTER
+                textSize = 14f
+                setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
+                tag = item
+                setOnClickListener {
+                    customMode = false
+                    selectedIntent = item
+                    refreshChips()
+                    customPurpose?.clearFocus()
                 }
-                rowItems.forEach { item ->
-                    val chip = TextView(context).apply {
-                        gravity = Gravity.CENTER
-                        textSize = 14f
-                        setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
-                        tag = item
-                        setOnClickListener {
-                            selectedIntent = item
-                            refreshChips()
-                        }
-                    }
-                    chipViews += chip
-                    row.addView(chip, LinearLayout.LayoutParams(0, 42.dp(), 1f).apply { setMargins(3.dp(), 4.dp(), 3.dp(), 4.dp()) })
-                }
-                chipBox.addView(row)
             }
-            refreshChips()
+            fun addChipRows(parent: LinearLayout, values: List<String>) {
+                values.chunked(2).forEach { rowItems ->
+                    val row = LinearLayout(context).apply {
+                        orientation = LinearLayout.HORIZONTAL
+                        setPadding(0, 2.dp(), 0, 2.dp())
+                        clipToPadding = false
+                    }
+                    rowItems.forEach { item ->
+                        val chip = chip(item)
+                        chipViews += chip
+                        row.addView(chip, LinearLayout.LayoutParams(0, 42.dp(), 1f).apply { setMargins(3.dp(), 4.dp(), 3.dp(), 4.dp()) })
+                    }
+                    if (rowItems.size == 1) row.addView(View(context), LinearLayout.LayoutParams(0, 42.dp(), 1f).apply { setMargins(3.dp(), 4.dp(), 3.dp(), 4.dp()) })
+                    parent.addView(row)
+                }
+            }
+
+            val chipBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            addChipRows(chipBox, featured)
             card.addView(chipBox)
+
+            val secondaryPanel = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+                setPadding(0, 4.dp(), 0, 0)
+            }
+            val secondaryTabs = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+            val moreBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+            val customBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; visibility = View.GONE }
+            customPurpose = newPurposeEditor()
+            customBox.addView(customPurpose)
+            customBox.addView(addPresetCheck)
+
+            fun setSecondaryMode(showCustom: Boolean) {
+                customMode = showCustom
+                moreBox.visibility = if (showCustom) View.GONE else View.VISIBLE
+                customBox.visibility = if (showCustom) View.VISIBLE else View.GONE
+                refreshChips()
+            }
+            val moreTab = button("更多预设", fieldBg, textBody) { setSecondaryMode(false) }
+            val customTab = button("新目的", primaryContainer, onPrimaryContainer) { setSecondaryMode(true) }
+            secondaryTabs.addView(moreTab, LinearLayout.LayoutParams(0, 38.dp(), 1f).apply { rightMargin = 5.dp() })
+            secondaryTabs.addView(customTab, LinearLayout.LayoutParams(0, 38.dp(), 1f).apply { leftMargin = 5.dp() })
+            secondaryPanel.addView(secondaryTabs)
+            if (hidden.isNotEmpty()) {
+                addChipRows(moreBox, hidden)
+            } else {
+                moreBox.addView(TextView(context).apply {
+                    text = "没有更多预设，可以切换到新目的。"
+                    textSize = 12f
+                    setTextColor(textMuted)
+                    setPadding(4.dp(), 8.dp(), 4.dp(), 6.dp())
+                })
+            }
+            secondaryPanel.addView(moreBox)
+            secondaryPanel.addView(customBox)
+
+            val toggleSecondary = TextView(context).apply {
+                text = "没有想要的？展开更多预设 / 新目的"
+                textSize = 13f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(onPrimaryContainer)
+                gravity = Gravity.CENTER
+                setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
+                background = rounded(primaryContainer, 999)
+                setOnClickListener {
+                    secondaryPanel.visibility = if (secondaryPanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                    text = if (secondaryPanel.visibility == View.VISIBLE) "收起更多目的" else "没有想要的？展开更多预设 / 新目的"
+                    if (secondaryPanel.visibility == View.VISIBLE && hidden.isEmpty()) setSecondaryMode(true)
+                }
+            }
+            card.addView(toggleSecondary, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 40.dp()).apply { setMargins(0, 4.dp(), 0, 2.dp()) })
+            card.addView(secondaryPanel)
+            refreshChips()
         }
 
         val countdownText = TextView(context).apply {
@@ -186,12 +264,14 @@ object BlockOverlayUi {
         }
         val cancel = button("不打开了", primaryContainer, onPrimaryContainer) { onCancel() }
         val cont = button("继续 5 分钟", primary, Color.WHITE) {
-            val chosen = if (requireTypedPurpose) {
+            val customText = if (requireTypedPurpose) {
                 typedPurpose?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
             } else {
-                selectedIntent
+                customPurpose?.text?.toString()?.trim()?.takeIf { it.isNotBlank() }
             }
-            onContinue(chosen)
+            val chosen = if (customMode || requireTypedPurpose) customText else selectedIntent
+            val addPreset = (customMode || requireTypedPurpose) && !customText.isNullOrBlank() && addPresetCheck?.isChecked == true
+            onContinue(chosen, addPreset)
         }.apply { isEnabled = false; alpha = 0.45f }
         buttonRow.addView(cancel, LinearLayout.LayoutParams(0, 48.dp(), 1f).apply { rightMargin = 6.dp() })
         buttonRow.addView(cont, LinearLayout.LayoutParams(0, 48.dp(), 1f).apply { leftMargin = 6.dp() })

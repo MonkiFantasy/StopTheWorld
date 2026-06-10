@@ -59,6 +59,39 @@ object DemoBlockPrefs {
         return appOptions.ifEmpty { groupOptions.ifEmpty { intents(context) } }
     }
 
+    fun rankedPurposeOptionsForPackage(context: Context, packageName: String): List<String> {
+        val base = purposeOptionsForPackage(context, packageName).map { it.trim() }.filter { it.isNotBlank() }.distinct()
+        val counts = purposeRecords(context)
+            .asSequence()
+            .filter { it.packageName == packageName }
+            .groupingBy { it.purpose.trim() }
+            .eachCount()
+        return base.sortedWith(compareByDescending<String> { counts[it] ?: 0 }.thenBy { base.indexOf(it) })
+    }
+
+    fun addPurposePresetForPackage(context: Context, packageName: String, purpose: String) {
+        val cleaned = purpose.trim().take(32)
+        if (cleaned.isBlank()) return
+        val current = purposeOptionsForPackage(context, packageName)
+        if (current.any { it.equals(cleaned, ignoreCase = true) }) return
+        val groupsNow = groups(context)
+        val group = groupsNow.firstOrNull { g -> g.apps.any { it.packageName == packageName } }
+        val app = group?.apps?.firstOrNull { it.packageName == packageName }
+        when {
+            app != null && app.purposeOptions.isNotEmpty() -> {
+                setGroups(context, groupsNow.map { g ->
+                    if (g.id == group.id) g.copy(apps = g.apps.map { entry ->
+                        if (entry.packageName == packageName) entry.copy(purposeOptions = (listOf(cleaned) + entry.purposeOptions).distinct().take(8)) else entry
+                    }) else g
+                })
+            }
+            group != null && group.purposeOptions.isNotEmpty() -> {
+                updateGroupPurposeOptions(context, group.id, (listOf(cleaned) + group.purposeOptions).distinct().take(8))
+            }
+            else -> setIntents(context, (listOf(cleaned) + intents(context)).distinct().take(8))
+        }
+    }
+
     fun requireTypedPurposeForPackage(context: Context, packageName: String): Boolean {
         val app = entryForPackage(context, packageName)
         return app?.requireTypedPurpose ?: (groupForPackage(context, packageName)?.requireTypedPurpose == true)

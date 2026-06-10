@@ -148,14 +148,15 @@ class FloatingReminderService : Service() {
             groupName = group?.name,
             limitSnapshot = DemoBlockPrefs.groupLimitSnapshot(this, packageName, group),
             requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName),
-            intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName),
+            intents = DemoBlockPrefs.rankedPurposeOptionsForPackage(this, packageName),
             onCancel = {
                 DemoBlockPrefs.suppressAfterCancel(this, packageName)
                 hideOverlay()
                 val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(home)
             },
-            onContinue = { chosen ->
+            onContinue = { chosen, addToPreset ->
+                if (addToPreset && !chosen.isNullOrBlank()) DemoBlockPrefs.addPurposePresetForPackage(this, packageName, chosen)
                 DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
                 hideOverlay()
                 showMini(chosen ?: "有意使用")
