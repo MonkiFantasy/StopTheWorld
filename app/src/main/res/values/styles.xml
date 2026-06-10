@@ -1,7 +1,8 @@
 <resources>
     <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:navigationBarColor">#FFFFFF</item>
+        <!-- Matches StwLightColors.surfaceContainer (bottom navigation bar background). -->
+        <item name="android:navigationBarColor">#F0EDF2</item>
         <item name="android:fontFamily">sans</item>
     </style>
 </resources>

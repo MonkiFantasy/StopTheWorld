@@ -8,9 +8,6 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -19,11 +16,6 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.ScrollView
-import android.widget.TextView
-import dev.stw.blocking.LimitSource
 
 class FloatingReminderService : Service() {
     private val handler = Handler(Looper.getMainLooper())
@@ -150,124 +142,30 @@ class FloatingReminderService : Service() {
         hideMini()
         overlayPackage = packageName
         val group = DemoBlockPrefs.groupForPackage(this, packageName)
-        val limitSnapshot = DemoBlockPrefs.groupLimitSnapshot(this, packageName, group)
-        val overLimit = limitSnapshot.overLimit
-        val requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName)
-        val intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName)
-        var selectedIntent: String? = intents.firstOrNull()
-        var typedPurpose: EditText? = null
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(20.dp, 20.dp, 20.dp, 20.dp)
-            setBackgroundColor(0xCC0F172A.toInt())
-        }
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(22.dp, 20.dp, 22.dp, 20.dp)
-            background = rounded(Color.WHITE, 24.dp)
-            elevation = 10f
-        }
-        val scroller = ScrollView(this).apply {
-            isFillViewport = false
-            clipToPadding = false
-            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-        }
-        scroller.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
-        root.addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
-        card.addText("时停 · Stop the World", 12f, true, if (overLimit) Color.rgb(185, 28, 28) else Color.rgb(37, 99, 235), 0)
-        card.addText(if (overLimit) "已经超时" else "先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
-        card.addText("你正在打开 $appLabel", 17f, true, Color.rgb(51, 65, 85), 4.dp)
-        group?.let { card.addText("分组：${it.name}", 14f, true, Color.rgb(55, 48, 163), 4.dp) }
-        if (overLimit) {
-            card.addText(
-                "当前应用今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.appUsedMillis)} · 分组今日已用 ${DemoBlockPrefs.compactDuration(limitSnapshot.groupUsedMillis)}",
-                14f,
-                false,
-                Color.rgb(71, 85, 105),
-                8.dp,
-            )
-            val limitLabel = if (limitSnapshot.source == LimitSource.APP) "单应用限时" else "分组限时"
-            card.addText(
-                "$limitLabel ${DemoBlockPrefs.compactDuration(limitSnapshot.limitMillis)} · 已超 ${DemoBlockPrefs.compactDuration(limitSnapshot.overMillis)}",
-                16f,
-                true,
-                Color.rgb(185, 28, 28),
-                4.dp,
-            )
-            card.addText(
-                "建议先回到桌面，或确认这次继续打开的必要性。",
-                14f,
-                false,
-                Color.rgb(100, 116, 139),
-                4.dp,
-            )
-        }
-        card.addText(if (overLimit) "如果仍要打开，这次是为了什么？" else "这次打开是为了什么？", 16f, false, Color.rgb(71, 85, 105), 8.dp)
+        val handles = BlockOverlayUi.build(
+            context = this,
+            appLabel = appLabel,
+            groupName = group?.name,
+            limitSnapshot = DemoBlockPrefs.groupLimitSnapshot(this, packageName, group),
+            requireTypedPurpose = DemoBlockPrefs.requireTypedPurposeForPackage(this, packageName),
+            intents = DemoBlockPrefs.purposeOptionsForPackage(this, packageName),
+            onCancel = {
+                DemoBlockPrefs.suppressAfterCancel(this, packageName)
+                hideOverlay()
+                val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(home)
+            },
+            onContinue = { chosen ->
+                DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
+                hideOverlay()
+                showMini(chosen ?: "有意使用")
+            },
+        )
 
-        val chips = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val chipViews = mutableListOf<TextView>()
-        fun refreshChips() {
-            chipViews.forEach { view ->
-                val raw = view.tag as String
-                val selected = raw == selectedIntent
-                view.text = if (selected) "✓ $raw" else raw
-                view.setTextColor(if (selected) Color.rgb(55, 48, 163) else Color.rgb(51, 65, 85))
-                view.background = rounded(if (selected) Color.rgb(224, 231, 255) else Color.rgb(241, 245, 249), 999.dp)
-            }
-        }
-        intents.chunked(2).forEach { rowItems ->
-            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp, 0, 2.dp); clipToPadding = false }
-            rowItems.forEach { item ->
-                val chip = TextView(this).apply {
-                    gravity = Gravity.CENTER
-                    textSize = 14f
-                    setPadding(8.dp, 8.dp, 8.dp, 8.dp)
-                    tag = item
-                    setOnClickListener {
-                        selectedIntent = item
-                        refreshChips()
-                    }
-                }
-                chipViews += chip
-                row.addView(chip, LinearLayout.LayoutParams(0, 42.dp, 1f).apply { setMargins(3.dp, 4.dp, 3.dp, 4.dp) })
-            }
-            chips.addView(row)
-        }
-        refreshChips()
-        card.addView(chips)
-
-        val countdownText = TextView(this).apply {
-            text = "还需等待 3 秒"
-            textSize = 18f
-            gravity = Gravity.CENTER
-            setTypeface(typeface, Typeface.BOLD)
-            setTextColor(Color.rgb(55, 48, 163))
-            setPadding(0, 14.dp, 0, 12.dp)
-        }
-        card.addView(countdownText)
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp, 0, 2.dp); clipToPadding = false }
-        val cancel = button("不打开了", Color.rgb(239, 246, 255), Color.rgb(30, 64, 175)) {
-            DemoBlockPrefs.suppressAfterCancel(this, packageName)
-            hideOverlay()
-            val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(home)
-        }
-        val cont = button("继续 5 分钟", Color.rgb(37, 99, 235), Color.WHITE) {
-            val chosen = if (requireTypedPurpose) typedPurpose?.text?.toString()?.trim()?.takeIf { it.isNotBlank() } else selectedIntent
-            DemoBlockPrefs.setUnlockUntil(this, packageName, System.currentTimeMillis() + 5 * 60_000L, chosen)
-            hideOverlay()
-            showMini(chosen ?: "有意使用", appLabel)
-        }.apply { isEnabled = false; alpha = 0.45f }
-        row.addView(cancel, LinearLayout.LayoutParams(0, 48.dp, 1f).apply { rightMargin = 6.dp })
-        row.addView(cont, LinearLayout.LayoutParams(0, 48.dp, 1f).apply { leftMargin = 6.dp })
-        card.addView(row)
-        card.addText("仅检测前台 App 包名，不读取屏幕内容。", 12f, false, Color.rgb(100, 116, 139), 10.dp)
-
-        overlayView = root
+        overlayView = handles.root
         runCatching {
-            windowManager?.addView(root, fullParams())
-            startCountdown(countdownText, cont)
+            windowManager?.addView(handles.root, fullParams())
+            countdownRunnable = BlockOverlayUi.startCountdown(handler, handles)
             DemoBlockPrefs.markBlockShown(this, packageName, System.currentTimeMillis(), source)
         }.onFailure {
             overlayView = null
@@ -276,17 +174,9 @@ class FloatingReminderService : Service() {
         }
     }
 
-    private fun showMini(intentText: String, appLabel: String) {
+    private fun showMini(intentText: String) {
         hideMini()
-        val mini = TextView(this).apply {
-            text = "时停：$intentText"
-            textSize = 13f
-            setTextColor(Color.WHITE)
-            setTypeface(typeface, Typeface.BOLD)
-            setPadding(12.dp, 8.dp, 12.dp, 8.dp)
-            background = rounded(0xDD2563EB.toInt(), 999.dp)
-            setOnClickListener { hideMini() }
-        }
+        val mini = BlockOverlayUi.buildMini(this, intentText) { hideMini() }
         miniView = mini
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -301,24 +191,6 @@ class FloatingReminderService : Service() {
         }
         runCatching { windowManager?.addView(mini, params) }
         handler.postDelayed({ hideMini() }, 5 * 60_000L)
-    }
-
-    private fun startCountdown(textView: TextView, continueButton: TextView) {
-        var remaining = 3
-        countdownRunnable = object : Runnable {
-            override fun run() {
-                if (remaining > 0) {
-                    textView.text = "还需等待 $remaining 秒"
-                    remaining -= 1
-                    handler.postDelayed(this, 1_000L)
-                } else {
-                    textView.text = "可以继续，也可以选择不打开。"
-                    continueButton.isEnabled = true
-                    continueButton.alpha = 1f
-                }
-            }
-        }
-        handler.post(countdownRunnable!!)
     }
 
     private fun hideOverlay() {
@@ -356,32 +228,6 @@ class FloatingReminderService : Service() {
         }
     }
 
-    private fun button(text: String, bg: Int, fg: Int, onClick: () -> Unit) = TextView(this).apply {
-        this.text = text
-        gravity = Gravity.CENTER
-        textSize = 14f
-        setTypeface(typeface, Typeface.BOLD)
-        includeFontPadding = false
-        minHeight = 0
-        setPadding(10.dp, 0, 10.dp, 0)
-        setTextColor(fg)
-        background = rounded(bg, 18.dp)
-        stateListAnimator = null
-        elevation = 0f
-        setOnClickListener { if (isEnabled) onClick() }
-    }
-
-    private fun LinearLayout.addText(textValue: String, sizeSp: Float, bold: Boolean, color: Int, top: Int) {
-        addView(TextView(this@FloatingReminderService).apply {
-            text = textValue
-            textSize = sizeSp
-            setTextColor(color)
-            if (bold) setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, top, 0, 2.dp)
-        })
-    }
-
-    private fun rounded(color: Int, radius: Int): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = radius.toFloat() }
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 
     companion object {

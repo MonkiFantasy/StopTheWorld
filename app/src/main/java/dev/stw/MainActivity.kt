@@ -35,11 +35,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedAssistChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,7 +47,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -69,16 +66,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import dev.stw.blocking.AccessibilityStatus
 import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
 import dev.stw.blocking.FloatingReminderService
 import dev.stw.blocking.RestrictedGroup
+import dev.stw.ui.SectionCard
+import dev.stw.ui.StwTheme
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
@@ -89,68 +86,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-
-private val DayColors = lightColorScheme(
-    background = Color(0xFFFAF9FE),
-    surface = Color(0xFFF0F0F7),
-    surfaceVariant = Color(0xFFE9EAF2),
-    primary = Color(0xFF536AA3),
-    primaryContainer = Color(0xFFE0E4F5),
-    secondary = Color(0xFF6B7280),
-    secondaryContainer = Color(0xFFE7E8EF),
-    tertiary = Color(0xFF8B5CF6),
-    tertiaryContainer = Color(0xFFEDE9FE),
-    onBackground = Color(0xFF171821),
-    onSurface = Color(0xFF171821),
-    onSurfaceVariant = Color(0xFF5F6472),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-)
-
-private val NeonBorderBrush = Brush.linearGradient(
-    listOf(Color(0xFF22D3EE), Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFFFACC15)),
-)
-
-
-private val CompactTypography = Typography(
-    displayLarge = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
-    displayMedium = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
-    displaySmall = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    headlineLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
-    headlineMedium = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    headlineSmall = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
-    titleLarge = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
-    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
-    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
-    bodyLarge = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal),
-    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal),
-    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
-    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold),
-    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
-)
-
-private val DroidSpacesLightColors = lightColorScheme(
-    background = Color(0xFFFFFBFF),
-    surface = Color(0xFFF6F2F7),
-    surfaceVariant = Color(0xFFE7E1EA),
-    surfaceContainer = Color(0xFFF0EDF2),
-    surfaceContainerHigh = Color(0xFFEAE7EC),
-    primary = Color(0xFF536AA3),
-    primaryContainer = Color(0xFFE2E7FA),
-    secondary = Color(0xFF6E7480),
-    secondaryContainer = Color(0xFFE9ECF2),
-    tertiary = Color(0xFF6B6477),
-    tertiaryContainer = Color(0xFFECE7F2),
-    outlineVariant = Color(0xFFC9C5CF),
-    onBackground = Color(0xFF1B1B1F),
-    onSurface = Color(0xFF1B1B1F),
-    onSurfaceVariant = Color(0xFF5F5D66),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-)
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatching {
     val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -220,7 +155,7 @@ fun StopTheWorldDemoApp(
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
 ) {
-    MaterialTheme(colorScheme = DroidSpacesLightColors, typography = CompactTypography) {
+    StwTheme {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             DemoHome(
                 onOpenUsageAccess = onOpenUsageAccess,
@@ -376,7 +311,11 @@ private fun DemoHome(
             .fillMaxSize()
             .background(
                 Brush.verticalGradient(
-                    listOf(Color(0xFFF8F9FA), Color(0xFFF1F2F4), Color(0xFFEDEFF2)),
+                    listOf(
+                        MaterialTheme.colorScheme.background,
+                        MaterialTheme.colorScheme.surface,
+                        MaterialTheme.colorScheme.surfaceContainer,
+                    ),
                 ),
             ),
     ) {
@@ -542,11 +481,11 @@ private fun DroidStyleBottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .height(86.dp),
-        color = Color(0xFFF0EFF7),
+        color = MaterialTheme.colorScheme.surfaceContainer,
         shadowElevation = 2.dp,
     ) {
         Column(Modifier.fillMaxSize()) {
-            HorizontalDivider(color = Color(0xFFE0DFE8))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -572,16 +511,14 @@ private fun DroidStyleNavItem(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val activeColor = Color(0xFF4F6397)
-    val inactiveColor = Color(0xFF7A7D86)
-    val color = if (selected) activeColor else inactiveColor
+    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
         onClick = onClick,
         modifier = Modifier
             .width(if (selected) 122.dp else 78.dp)
             .fillMaxHeight(),
         shape = RoundedCornerShape(24.dp),
-        color = if (selected) Color(0xFFDCDCEB) else Color.Transparent,
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -689,14 +626,9 @@ private fun StatusCard(
     dayBoundaryText: String,
     onConfigureDayBoundary: () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-        shape = RoundedCornerShape(20.dp),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("状态", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    SectionCard {
+        Text("状态", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusChip("Usage", hasUsageAccess, onClick = onOpenUsageAccess)
                 StatusChip("悬浮窗", hasOverlayPermission, onClick = onOpenOverlaySettings)
                 StatusChip("无障碍", hasAccessibility, onClick = onOpenAccessibilitySettings)
@@ -719,7 +651,6 @@ private fun StatusCard(
                 }
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态", style = MaterialTheme.typography.labelMedium) }
             }
-        }
     }
 }
 
@@ -738,91 +669,22 @@ private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
 }
 
 @Composable
-private fun DebugCard(debugState: DemoDebugState) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("触发调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("当前策略：无障碍负责即时事件，兜底监控负责 MIUI/OEM 延迟事件补偿；两路共用触发锁，只取包名/窗口身份，不读取文本。")
-        }
-    }
-}
-
-@Composable
 private fun IntentConfigCard(
     intentText: String,
     onIntentTextChange: (String) -> Unit,
     onSave: () -> Unit,
 ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("全局目的模板", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text("自定义意图选项，用逗号分隔。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedTextField(
-                value = intentText,
-                onValueChange = onIntentTextChange,
-                label = { Text("意图列表", style = MaterialTheme.typography.labelSmall) },
-                textStyle = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项", style = MaterialTheme.typography.labelMedium) }
-        }
-    }
-}
-
-
-@Composable
-private fun AppPurposeConfigCard(
-    groups: List<RestrictedGroup>,
-    selectedGroupId: String,
-    onSave: (String, String, Boolean?, Int?) -> Unit,
-) {
-    val apps = groups.firstOrNull { it.id == selectedGroupId }?.apps ?: groups.flatMap { it.apps }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("应用级目的配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("可针对某个应用覆盖目的选项；打开该应用时优先使用这里的设置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (apps.isEmpty()) {
-                Text("当前分组暂无 App。先在上方添加目标 App。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            apps.forEach { app ->
-                var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
-                var typed by remember(app.packageName, app.requireTypedPurpose) { mutableStateOf(app.requireTypedPurpose == true) }
-                var limitText by remember(app.packageName, app.dailyLimitMinutes) { mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "") }
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(18.dp)) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(app.label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                        Text(app.packageName, style = MaterialTheme.typography.bodySmall)
-                        OutlinedTextField(
-                            value = options,
-                            onValueChange = { options = it },
-                            label = { Text("该应用目的选项，空=使用全局目的") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        OutlinedTextField(
-                            value = limitText,
-                            onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
-                            label = { Text("单应用每日限时（分钟，空/0=使用分组限时）") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                        )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.weight(1f)) {
-                                Text("该应用要求手动输入目的", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-                                Text("关闭则显示上面的目的选项；空选项时使用全局目的。", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Switch(checked = typed, onCheckedChange = { typed = it })
-                        }
-                        Button(onClick = { onSave(app.packageName, options, typed, limitText.toIntOrNull()?.coerceAtLeast(0) ?: 0) }, modifier = Modifier.fillMaxWidth()) { Text("保存这个应用") }
-                    }
-                }
-            }
-        }
+    SectionCard {
+        Text("全局目的模板", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text("自定义意图选项，用逗号分隔。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = intentText,
+            onValueChange = onIntentTextChange,
+            label = { Text("意图列表", style = MaterialTheme.typography.labelSmall) },
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项", style = MaterialTheme.typography.labelMedium) }
     }
 }
 
@@ -846,51 +708,49 @@ private fun UsageStatsOverviewCard(
         }.sortedByDescending { it.usedMillis }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.weight(1f)) {
-                    Text("应用使用时间统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("按当前每日重置时间到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("应用使用时间统计", style = MaterialTheme.typography.titleMedium)
+                Text("按当前每日重置时间到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
-                AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
-                AssistChip(onClick = { mode = "purpose" }, label = { Text(if (mode == "purpose") "✓ 目的时段" else "目的时段") })
+        }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
+            AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
+            AssistChip(onClick = { mode = "purpose" }, label = { Text(if (mode == "purpose") "✓ 目的时段" else "目的时段") })
+        }
+        if (mode == "purpose") {
+            PurposeSegmentsList(purposeSegments)
+        } else if (mode == "group") {
+            if (groupRows.isEmpty()) {
+                Text("暂无分组。", style = MaterialTheme.typography.bodySmall)
             }
-            if (mode == "purpose") {
-                PurposeSegmentsList(purposeSegments)
-            } else if (mode == "group") {
-                if (groupRows.isEmpty()) {
-                    Text("暂无分组。", style = MaterialTheme.typography.bodySmall)
-                }
-                groupRows.forEachIndexed { index, row ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text("${index + 1}. ${row.group.name}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                            Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                        }
-                        val limitText = if (row.group.dailyLimitMinutes > 0) " · 限时 ${row.group.dailyLimitMinutes} 分钟/天" else " · 不限时"
-                        Text("${row.group.apps.size} 个 App · 打开 ${row.openCount} 次$limitText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            groupRows.forEachIndexed { index, row ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("${index + 1}. ${row.group.name}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     }
-                    if (index != groupRows.lastIndex) HorizontalDivider()
+                    val limitText = if (row.group.dailyLimitMinutes > 0) " · 限时 ${row.group.dailyLimitMinutes} 分钟/天" else " · 不限时"
+                    Text("${row.group.apps.size} 个 App · 打开 ${row.openCount} 次$limitText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-            } else {
-                if (usageRows.isEmpty()) {
-                    Text("暂无数据。请确认 Usage Access 已授权，然后使用几个 App 后刷新。", style = MaterialTheme.typography.bodySmall)
-                }
-                usageRows.forEachIndexed { index, row ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text("${index + 1}. ${row.appLabel}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
-                        }
-                        Text("打开 ${row.openCount} 次 · 最近 ${formatTime(row.lastTimeUsedMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(row.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (index != groupRows.lastIndex) HorizontalDivider()
+            }
+        } else {
+            if (usageRows.isEmpty()) {
+                Text("暂无数据。请确认 Usage Access 已授权，然后使用几个 App 后刷新。", style = MaterialTheme.typography.bodySmall)
+            }
+            usageRows.forEachIndexed { index, row ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("${index + 1}. ${row.appLabel}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(formatDuration(row.usedMillis), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                     }
-                    if (index != usageRows.lastIndex) HorizontalDivider()
+                    Text("打开 ${row.openCount} 次 · 最近 ${formatTime(row.lastTimeUsedMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(row.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
+                if (index != usageRows.lastIndex) HorizontalDivider()
             }
         }
     }
@@ -936,27 +796,6 @@ private data class GroupUsageRow(
     val openCount: Int,
 )
 
-@Composable
-private fun UsageStatsCard(usageRows: List<UsageAppInfo>) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("今日使用统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (usageRows.isEmpty()) {
-                Text("暂无数据。请确认 Usage Access 已授权，然后使用几个 App 后刷新。")
-            } else {
-                usageRows.forEachIndexed { index, row ->
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("${index + 1}. ${row.appLabel}", fontWeight = FontWeight.SemiBold)
-                        Text("${formatDuration(row.usedMillis)} · 打开 ${row.openCount} 次 · 最近 ${formatTime(row.lastTimeUsedMillis)}")
-                        Text(row.packageName, style = MaterialTheme.typography.bodySmall)
-                    }
-                    if (index != usageRows.lastIndex) HorizontalDivider()
-                }
-            }
-        }
-    }
-}
-
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -982,18 +821,13 @@ private fun GroupManagementCard(
     var showCreateDialog by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxWidth()) {
-        Card(
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            border = BorderStroke(1.dp, Color(0xFFE0E2E6)),
-            shape = RoundedCornerShape(22.dp),
-        ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                Text("只显示分组卡片；点按选择，长按卡片展开二级菜单。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (groups.isEmpty()) {
-                    Text("暂无分组。点击右下角添加分组。", style = MaterialTheme.typography.bodySmall)
-                }
-                groups.forEach { group ->
+        SectionCard {
+            Text("分组", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text("只显示分组卡片；点按选择，长按卡片展开二级菜单。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (groups.isEmpty()) {
+                Text("暂无分组。点击右下角添加分组。", style = MaterialTheme.typography.bodySmall)
+            }
+            groups.forEach { group ->
                 GroupCardItem(
                     group = group,
                     selected = group.id == selectedGroupId,
@@ -1018,9 +852,8 @@ private fun GroupManagementCard(
                     currentPackages = currentPackages,
                     onAddAppToGroup = onAddAppToGroup,
                 )
-                }
-                Spacer(Modifier.height(52.dp))
             }
+            Spacer(Modifier.height(52.dp))
         }
         Surface(
             onClick = { showCreateDialog = true },
@@ -1043,7 +876,7 @@ private fun GroupManagementCard(
     if (showCreateDialog) {
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
-            title = { Text("添加分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            title = { Text("添加分组", style = MaterialTheme.typography.titleMedium) },
             text = {
                 OutlinedTextField(
                     value = newGroupName,
@@ -1086,13 +919,17 @@ private fun GroupCardItem(
     onAddAppToGroup: (String, String, String) -> Unit,
 ) {
     val containerColor = when {
-        expanded -> Color(0xFFE8EAEE)
-        selected -> Color(0xFFE1E4E8)
-        else -> Color(0xFFF0F1F3)
+        expanded -> MaterialTheme.colorScheme.surfaceContainerHigh
+        selected -> MaterialTheme.colorScheme.surfaceVariant
+        else -> MaterialTheme.colorScheme.surface
     }
     Card(
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        border = BorderStroke(1.dp, if (selected || expanded) Color(0xFFD6DAE0) else Color(0xFFE4E6EA)),
+        border = BorderStroke(
+            1.dp,
+            if (selected || expanded) MaterialTheme.colorScheme.outlineVariant
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+        ),
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -1123,7 +960,7 @@ private fun GroupCardItem(
                 Text(
                     group.apps.take(3).joinToString(" · ") { it.label } + if (group.apps.size > 3) " …" else "",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFCBD5E1),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (expanded) {
@@ -1169,7 +1006,7 @@ private fun GroupSecondMenu(
         "delete" to "删除",
         "apps" to "App管理",
     )
-    HorizontalDivider(color = Color(0xFFE4E6EA))
+    HorizontalDivider()
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         items.forEach { (key, label) ->
             AssistChip(
@@ -1285,7 +1122,7 @@ private fun GroupDeletePanel(
     onDeleteGroup: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("删除“${group.name}”及其 App 关联？", style = MaterialTheme.typography.bodySmall, color = Color(0xFF8A5A5A))
+        Text("删除“${group.name}”及其 App 关联？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         OutlinedButton(onClick = { onDeleteGroup(group.id) }, modifier = Modifier.fillMaxWidth()) {
             Text("确认删除", style = MaterialTheme.typography.labelMedium)
         }
@@ -1330,7 +1167,7 @@ private fun GroupAppsPanel(
                         Text("移除", style = MaterialTheme.typography.labelSmall)
                     }
                 }
-                if (index != group.apps.lastIndex) HorizontalDivider(color = Color(0xFFE4E6EA))
+                if (index != group.apps.lastIndex) HorizontalDivider()
             }
         }
     }
@@ -1340,7 +1177,7 @@ private fun GroupAppsPanel(
         var limitText by remember(app.packageName, app.dailyLimitMinutes) { mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "") }
         AlertDialog(
             onDismissRequest = { editingApp = null },
-            title = { Text("应用设置：${app.label}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            title = { Text("应用设置：${app.label}", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1381,7 +1218,7 @@ private fun GroupAppsPanel(
     if (showAddDialog) {
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
-            title = { Text("添加 App 到 ${group.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            title = { Text("添加 App 到 ${group.name}", style = MaterialTheme.typography.titleMedium) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1411,19 +1248,17 @@ private fun TestAndDebugCard(
     onRefresh: () -> Unit,
 ) {
     val totalApps = groups.sumOf { it.apps.size }
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("测试与调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text("这里是开发测试区，和上面的日常使用/分组配置分开。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App", style = MaterialTheme.typography.labelMedium) }
-            OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新调试信息") }
-            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+    SectionCard(containerColor = MaterialTheme.colorScheme.tertiaryContainer) {
+        Text("测试与调试", style = MaterialTheme.typography.titleMedium)
+        Text("这里是开发测试区，和上面的日常使用/分组配置分开。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App", style = MaterialTheme.typography.labelMedium) }
+        OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新调试信息", style = MaterialTheme.typography.labelMedium) }
+        Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1520,14 +1355,12 @@ private fun AppPickRow(
 
 @Composable
 private fun RuleCard(rule: AppRule, state: AppRuntimeState) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("当前规则：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("今日已使用：${state.usedTodayMillis / 60_000} / ${rule.dailyLimitMinutes} 分钟", style = MaterialTheme.typography.bodySmall)
-            Text("今日已打开：${state.openCountToday} / ${rule.maxOpenCountPerDay} 次", style = MaterialTheme.typography.bodySmall)
-            Text("打开前等待：10 秒", style = MaterialTheme.typography.bodySmall)
-            Text("短解锁时长：5 分钟", style = MaterialTheme.typography.bodySmall)
-        }
+    SectionCard {
+        Text("当前规则：${rule.appLabel}", style = MaterialTheme.typography.titleMedium)
+        Text("今日已使用：${state.usedTodayMillis / 60_000} / ${rule.dailyLimitMinutes} 分钟", style = MaterialTheme.typography.bodySmall)
+        Text("今日已打开：${state.openCountToday} / ${rule.maxOpenCountPerDay} 次", style = MaterialTheme.typography.bodySmall)
+        Text("打开前等待：10 秒", style = MaterialTheme.typography.bodySmall)
+        Text("短解锁时长：5 分钟", style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -1545,41 +1378,39 @@ private fun FirstOpenInterventionCard(rule: AppRule, decision: Decision) {
         }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("提醒页预览：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("先停一下", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    SectionCard {
+        Text("提醒页预览：${rule.appLabel}", style = MaterialTheme.typography.titleMedium)
+        Text("先停一下", style = MaterialTheme.typography.titleMedium)
 
-            val message = when (decision) {
-                is Decision.ShowDelay -> decision.message
-                is Decision.LimitReached -> decision.reason
-                is Decision.ForcedRest -> "现在处于强制休息中"
-                Decision.Allow -> "当前允许使用"
-            }
-            Text("“$message”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-
-            Text("这次打开是为了：", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("查资料", "回复消息", "娱乐休息", "无聊", "逃避任务", "其他").forEach { intent ->
-                    AssistChip(
-                        onClick = { selectedIntent = intent },
-                        label = { Text(if (selectedIntent == intent) "✓ $intent" else intent) },
-                    )
-                }
-            }
-
-            Text(if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。", style = MaterialTheme.typography.bodySmall)
-
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("不打开了") }
-                Button(onClick = {}, enabled = countdown == 0, modifier = Modifier.weight(1f)) { Text("继续 5 分钟") }
-            }
-
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Demo 事件：app=${rule.packageName}, intent=${selectedIntent ?: "未选择"}, decision=${decision::class.simpleName}",
-                style = MaterialTheme.typography.bodySmall,
-            )
+        val message = when (decision) {
+            is Decision.ShowDelay -> decision.message
+            is Decision.LimitReached -> decision.reason
+            is Decision.ForcedRest -> "现在处于强制休息中"
+            Decision.Allow -> "当前允许使用"
         }
+        Text("“$message”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+        Text("这次打开是为了：", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("查资料", "回复消息", "娱乐休息", "无聊", "逃避任务", "其他").forEach { intent ->
+                AssistChip(
+                    onClick = { selectedIntent = intent },
+                    label = { Text(if (selectedIntent == intent) "✓ $intent" else intent) },
+                )
+            }
+        }
+
+        Text(if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。", style = MaterialTheme.typography.bodySmall)
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("不打开了") }
+            Button(onClick = {}, enabled = countdown == 0, modifier = Modifier.weight(1f)) { Text("继续 5 分钟") }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = "Demo 事件：app=${rule.packageName}, intent=${selectedIntent ?: "未选择"}, decision=${decision::class.simpleName}",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }

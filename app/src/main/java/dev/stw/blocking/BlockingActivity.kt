@@ -14,11 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -33,6 +30,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.stw.ui.SectionCard
+import dev.stw.ui.StwTheme
 import kotlinx.coroutines.delay
 
 class BlockingActivity : ComponentActivity() {
@@ -50,7 +49,7 @@ class BlockingActivity : ComponentActivity() {
             ?: "你现在打开它，是有明确目的，还是只是习惯？"
 
         setContent {
-            MaterialTheme {
+            StwTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     BlockingScreen(
                         appLabel = appLabel,
@@ -131,44 +130,42 @@ private fun BlockingScreen(
             .padding(20.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        ) {
-            Column(Modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("你正在打开 $appLabel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("先停一下", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                Text("“$message”")
-                Text(
-                    text = "时停只使用无障碍服务检测前台 App 是否命中你设置的受限列表；这个 Demo 不读取、不保存、不上传屏幕内容或输入内容。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        SectionCard {
+            Text("时停 · Stop the World", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text("先停一下", style = MaterialTheme.typography.headlineMedium)
+            Text("你正在打开 $appLabel", style = MaterialTheme.typography.titleMedium)
+            Text("“$message”", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                Text("这次打开是为了：", fontWeight = FontWeight.SemiBold)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("查资料", "回复消息", "娱乐休息", "无聊", "逃避任务", "其他").forEach { intent ->
-                        AssistChip(
-                            onClick = { selectedIntent = intent },
-                            label = { Text(if (selectedIntent == intent) "✓ $intent" else intent) },
-                        )
-                    }
-                }
-
-                Text(
-                    text = if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。",
-                    fontWeight = FontWeight.SemiBold,
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(onClick = onReturn, modifier = Modifier.weight(1f)) {
-                        Text("不打开了")
-                    }
-                    Button(onClick = onContinue, enabled = countdown == 0, modifier = Modifier.weight(1f)) {
-                        Text("继续 $unlockMinutes 分钟")
-                    }
+            Text("这次打开是为了：", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("查资料", "回复消息", "娱乐休息", "无聊", "逃避任务", "其他").forEach { intent ->
+                    AssistChip(
+                        onClick = { selectedIntent = intent },
+                        label = { Text(if (selectedIntent == intent) "✓ $intent" else intent) },
+                    )
                 }
             }
+
+            Text(
+                text = if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = onReturn, modifier = Modifier.weight(1f)) {
+                    Text("不打开了")
+                }
+                Button(onClick = onContinue, enabled = countdown == 0, modifier = Modifier.weight(1f)) {
+                    Text("继续 $unlockMinutes 分钟")
+                }
+            }
+
+            Text(
+                text = "仅检测前台 App 包名/窗口身份，不读取文字、输入或聊天内容。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
