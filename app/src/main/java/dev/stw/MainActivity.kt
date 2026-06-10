@@ -385,6 +385,14 @@ private fun DemoHome(
                         DemoBlockPrefs.updateGroup(context, groupId, name, limit, typed)
                         groups = DemoBlockPrefs.groups(context)
                     },
+                    onUpdateGroupPurpose = { groupId, options ->
+                        DemoBlockPrefs.updateGroupPurposeOptions(context, groupId, options.split('，', ',', '|', '\n'))
+                        groups = DemoBlockPrefs.groups(context)
+                    },
+                    onUpdateAppPurpose = { packageName, options, typed, limitMinutes ->
+                        DemoBlockPrefs.updateAppPurpose(context, packageName, options.split('，', ',', '|', '\n'), typed, limitMinutes)
+                        groups = DemoBlockPrefs.groups(context)
+                    },
                     onRemoveApp = { groupId, packageName ->
                         DemoBlockPrefs.removeAppFromGroup(context, groupId, packageName)
                         groups = DemoBlockPrefs.groups(context)
@@ -475,11 +483,11 @@ private fun StatusCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("状态", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                StatusChip("Usage", hasUsageAccess)
-                StatusChip("悬浮窗", hasOverlayPermission)
-                StatusChip("无障碍", hasAccessibility)
-                StatusChip("极速监控", hasFloatingRunning)
-                StatusChip("省电白名单", ignoresBatteryOptimization)
+                StatusChip("Usage", hasUsageAccess, onClick = onOpenUsageAccess)
+                StatusChip("悬浮窗", hasOverlayPermission, onClick = onOpenOverlaySettings)
+                StatusChip("无障碍", hasAccessibility, onClick = onOpenAccessibilitySettings)
+                StatusChip("极速监控", hasFloatingRunning, onClick = onStartFloatingMonitor)
+                StatusChip("省电白名单", ignoresBatteryOptimization, onClick = onOpenBatterySettings)
                 StatusChip("目标App", totalRestrictedApps > 0)
             }
             Text("$totalRestrictedApps 个目标 App · 监控开关", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -489,13 +497,7 @@ private fun StatusCard(
             }
             OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置") }
             if (showDetails) {
-                Text("建议开启 Usage/悬浮窗/无障碍，并将省电设为不优化。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = onOpenUsageAccess, modifier = Modifier.weight(1f)) { Text("Usage") }
-                    Button(onClick = onOpenOverlaySettings, modifier = Modifier.weight(1f)) { Text("悬浮窗") }
-                    Button(onClick = onOpenAccessibilitySettings, modifier = Modifier.weight(1f)) { Text("无障碍") }
-                }
-                OutlinedButton(onClick = onOpenBatterySettings, modifier = Modifier.fillMaxWidth()) { Text("省电策略：设为无限制/不优化") }
+                Text("点击上方状态标签可进入对应权限/设置；建议开启 Usage、悬浮窗、无障碍，并将省电设为不优化。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态") }
             }
         }
@@ -503,11 +505,11 @@ private fun StatusCard(
 }
 
 @Composable
-private fun StatusChip(label: String, ok: Boolean) {
+private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
     val bg = if (ok) Color(0xFFE4EFE9) else Color(0xFFF2E6E6)
     val fg = if (ok) Color(0xFF486052) else Color(0xFF7B5656)
     ElevatedAssistChip(
-        onClick = {},
+        onClick = onClick,
         label = { Text("${if (ok) "✓" else "!"} $label") },
         colors = androidx.compose.material3.AssistChipDefaults.elevatedAssistChipColors(
             containerColor = bg,
@@ -709,6 +711,8 @@ private fun GroupManagementCard(
     onCreateGroup: () -> Unit,
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
+    onUpdateGroupPurpose: (String, String) -> Unit,
+    onUpdateAppPurpose: (String, String, Boolean?, Int?) -> Unit,
     onRemoveApp: (String, String) -> Unit,
     usageRows: List<UsageAppInfo>,
     launchableApps: List<LaunchableAppInfo>,
@@ -717,30 +721,21 @@ private fun GroupManagementCard(
 ) {
     var expandedGroupId by remember(groups, selectedGroupId) { mutableStateOf(selectedGroupId.takeIf { id -> groups.any { it.id == id } }) }
     var menuPanel by remember(expandedGroupId) { mutableStateOf("rename") }
+    var showCreateDialog by remember { mutableStateOf(false) }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.dp, Color(0xFFE0E2E6)),
-        shape = RoundedCornerShape(22.dp),
-    ) {
-        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-            Text("卡片列表展示；点按选择添加 App 的目标分组，长按卡片展开二级菜单。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedTextField(
-                    value = newGroupName,
-                    onValueChange = onNewGroupNameChange,
-                    label = { Text("新分组名") },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedButton(onClick = onCreateGroup) { Text("添加") }
-            }
-            if (groups.isEmpty()) {
-                Text("暂无分组。右下角 + 添加分组，或在这里输入名称后添加。", style = MaterialTheme.typography.bodySmall)
-            }
-            groups.forEach { group ->
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, Color(0xFFE0E2E6)),
+            shape = RoundedCornerShape(22.dp),
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("只显示分组卡片；点按选择，长按卡片展开二级菜单。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (groups.isEmpty()) {
+                    Text("暂无分组。点击右下角添加分组。", style = MaterialTheme.typography.bodySmall)
+                }
+                groups.forEach { group ->
                 GroupCardItem(
                     group = group,
                     selected = group.id == selectedGroupId,
@@ -757,14 +752,58 @@ private fun GroupManagementCard(
                     onMenuPanelChange = { menuPanel = it },
                     onDeleteGroup = onDeleteGroup,
                     onUpdateGroup = onUpdateGroup,
+                    onUpdateGroupPurpose = onUpdateGroupPurpose,
+                    onUpdateAppPurpose = onUpdateAppPurpose,
                     onRemoveApp = onRemoveApp,
                     usageRows = usageRows,
                     launchableApps = launchableApps,
                     currentPackages = currentPackages,
                     onAddAppToGroup = onAddAppToGroup,
                 )
+                }
+                Spacer(Modifier.height(52.dp))
             }
         }
+        Surface(
+            onClick = { showCreateDialog = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(14.dp),
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.primary,
+            shadowElevation = 4.dp,
+        ) {
+            Text(
+                "＋ 添加分组",
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+    }
+    if (showCreateDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateDialog = false },
+            title = { Text("添加分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            text = {
+                OutlinedTextField(
+                    value = newGroupName,
+                    onValueChange = onNewGroupNameChange,
+                    label = { Text("分组名") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onCreateGroup()
+                    showCreateDialog = false
+                }) { Text("添加") }
+            },
+            dismissButton = { TextButton(onClick = { showCreateDialog = false }) { Text("取消") } },
+        )
     }
 }
 
@@ -780,6 +819,8 @@ private fun GroupCardItem(
     onMenuPanelChange: (String) -> Unit,
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
+    onUpdateGroupPurpose: (String, String) -> Unit,
+    onUpdateAppPurpose: (String, String, Boolean?, Int?) -> Unit,
     onRemoveApp: (String, String) -> Unit,
     usageRows: List<UsageAppInfo>,
     launchableApps: List<LaunchableAppInfo>,
@@ -834,6 +875,8 @@ private fun GroupCardItem(
                     onMenuPanelChange = onMenuPanelChange,
                     onDeleteGroup = onDeleteGroup,
                     onUpdateGroup = onUpdateGroup,
+                    onUpdateGroupPurpose = onUpdateGroupPurpose,
+                    onUpdateAppPurpose = onUpdateAppPurpose,
                     onRemoveApp = onRemoveApp,
                     usageRows = usageRows,
                     launchableApps = launchableApps,
@@ -853,6 +896,8 @@ private fun GroupSecondMenu(
     onMenuPanelChange: (String) -> Unit,
     onDeleteGroup: (String) -> Unit,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
+    onUpdateGroupPurpose: (String, String) -> Unit,
+    onUpdateAppPurpose: (String, String, Boolean?, Int?) -> Unit,
     onRemoveApp: (String, String) -> Unit,
     usageRows: List<UsageAppInfo>,
     launchableApps: List<LaunchableAppInfo>,
@@ -877,7 +922,7 @@ private fun GroupSecondMenu(
     }
     when (menuPanel) {
         "limit" -> GroupLimitPanel(group = group, onUpdateGroup = onUpdateGroup)
-        "purpose" -> GroupPurposePanel(group = group, onUpdateGroup = onUpdateGroup)
+        "purpose" -> GroupPurposePanel(group = group, onUpdateGroup = onUpdateGroup, onUpdateGroupPurpose = onUpdateGroupPurpose)
         "delete" -> GroupDeletePanel(group = group, onDeleteGroup = onDeleteGroup)
         "apps" -> GroupAppsPanel(
             group = group,
@@ -885,6 +930,7 @@ private fun GroupSecondMenu(
             launchableApps = launchableApps,
             currentPackages = currentPackages,
             onAddAppToGroup = onAddAppToGroup,
+            onUpdateAppPurpose = onUpdateAppPurpose,
             onRemoveApp = onRemoveApp,
         )
         else -> GroupRenamePanel(group = group, onUpdateGroup = onUpdateGroup)
@@ -941,9 +987,19 @@ private fun GroupLimitPanel(
 private fun GroupPurposePanel(
     group: RestrictedGroup,
     onUpdateGroup: (String, String, Int, Boolean) -> Unit,
+    onUpdateGroupPurpose: (String, String) -> Unit,
 ) {
     var typedPurpose by remember(group.id, group.requireTypedPurpose) { mutableStateOf(group.requireTypedPurpose) }
+    var purposeOptions by remember(group.id, group.purposeOptions) { mutableStateOf(group.purposeOptions.joinToString("，")) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = purposeOptions,
+            onValueChange = { purposeOptions = it },
+            label = { Text("分组目的模板，空=使用全局模板") },
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text("目的模板优先级：单应用 ＞ 分组 ＞ 全局。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -956,7 +1012,10 @@ private fun GroupPurposePanel(
             Switch(checked = typedPurpose, onCheckedChange = { typedPurpose = it })
         }
         Button(
-            onClick = { onUpdateGroup(group.id, group.name, group.dailyLimitMinutes, typedPurpose) },
+            onClick = {
+                onUpdateGroup(group.id, group.name, group.dailyLimitMinutes, typedPurpose)
+                onUpdateGroupPurpose(group.id, purposeOptions)
+            },
             modifier = Modifier.fillMaxWidth(),
         ) { Text("保存目的设置", style = MaterialTheme.typography.labelMedium) }
     }
@@ -982,9 +1041,11 @@ private fun GroupAppsPanel(
     launchableApps: List<LaunchableAppInfo>,
     currentPackages: Set<String>,
     onAddAppToGroup: (String, String, String) -> Unit,
+    onUpdateAppPurpose: (String, String, Boolean?, Int?) -> Unit,
     onRemoveApp: (String, String) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingApp by remember { mutableStateOf<dev.stw.blocking.RestrictedAppEntry?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("组内 App", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -1004,6 +1065,9 @@ private fun GroupAppsPanel(
                         val limitText = if (app.dailyLimitMinutes > 0) " · 单应用 ${app.dailyLimitMinutes} 分钟/天" else ""
                         Text(app.packageName + limitText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
+                    OutlinedButton(onClick = { editingApp = app }) {
+                        Text("设置", style = MaterialTheme.typography.labelSmall)
+                    }
                     OutlinedButton(onClick = { onRemoveApp(group.id, app.packageName) }) {
                         Text("移除", style = MaterialTheme.typography.labelSmall)
                     }
@@ -1011,6 +1075,50 @@ private fun GroupAppsPanel(
                 if (index != group.apps.lastIndex) HorizontalDivider(color = Color(0xFFE4E6EA))
             }
         }
+    }
+    editingApp?.let { app ->
+        var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
+        var typed by remember(app.packageName, app.requireTypedPurpose) { mutableStateOf(app.requireTypedPurpose == true) }
+        var limitText by remember(app.packageName, app.dailyLimitMinutes) { mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "") }
+        AlertDialog(
+            onDismissRequest = { editingApp = null },
+            title = { Text("应用设置：${app.label}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = options,
+                        onValueChange = { options = it },
+                        label = { Text("单应用目的模板，空=使用分组/全局") },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    OutlinedTextField(
+                        value = limitText,
+                        onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
+                        label = { Text("单应用每日限时（分钟）") },
+                        textStyle = MaterialTheme.typography.bodySmall,
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("要求手动输入目的", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            Text("关闭则使用目的模板。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = typed, onCheckedChange = { typed = it })
+                    }
+                    Text("优先级：单应用 ＞ 分组 ＞ 全局。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onUpdateAppPurpose(app.packageName, options, typed, limitText.toIntOrNull()?.coerceAtLeast(0) ?: 0)
+                    editingApp = null
+                }) { Text("保存") }
+            },
+            dismissButton = { TextButton(onClick = { editingApp = null }) { Text("取消") } },
+        )
     }
     if (showAddDialog) {
         AlertDialog(

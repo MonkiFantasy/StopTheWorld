@@ -53,7 +53,8 @@ object DemoBlockPrefs {
 
     fun purposeOptionsForPackage(context: Context, packageName: String): List<String> {
         val appOptions = entryForPackage(context, packageName)?.purposeOptions.orEmpty().filter { it.isNotBlank() }
-        return appOptions.ifEmpty { intents(context) }
+        val groupOptions = groupForPackage(context, packageName)?.purposeOptions.orEmpty().filter { it.isNotBlank() }
+        return appOptions.ifEmpty { groupOptions.ifEmpty { intents(context) } }
     }
 
     fun requireTypedPurposeForPackage(context: Context, packageName: String): Boolean {
@@ -203,6 +204,14 @@ object DemoBlockPrefs {
         })
     }
 
+
+    fun updateGroupPurposeOptions(context: Context, groupId: String, purposeOptions: List<String>) {
+        val cleaned = purposeOptions.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(8)
+        setGroups(context, groups(context).map { group ->
+            if (group.id == groupId) group.copy(purposeOptions = cleaned) else group
+        })
+    }
+
     fun addAppToGroup(context: Context, groupId: String, packageName: String, label: String) {
         val current = groups(context).ifEmpty { listOf(RestrictedGroup("default", "默认分组", emptyList())) }
         val targetId = current.firstOrNull { it.id == groupId }?.id ?: current.first().id
@@ -239,6 +248,10 @@ object DemoBlockPrefs {
                     }
                 }
                 val id = obj.optString("id").ifBlank { newGroupId() }
+                val groupPurposeArray = obj.optJSONArray("purposeOptions") ?: JSONArray()
+                val groupPurposeOptions = buildList {
+                    for (k in 0 until groupPurposeArray.length()) groupPurposeArray.optString(k).takeIf { it.isNotBlank() }?.let { add(it) }
+                }
                 add(
                     RestrictedGroup(
                         id = id,
@@ -246,6 +259,7 @@ object DemoBlockPrefs {
                         apps = apps,
                         dailyLimitMinutes = obj.optInt("dailyLimitMinutes", 0).coerceAtLeast(0),
                         requireTypedPurpose = obj.optBoolean("requireTypedPurpose", false),
+                        purposeOptions = groupPurposeOptions,
                     ),
                 )
             }
@@ -259,6 +273,7 @@ object DemoBlockPrefs {
                 put("name", group.name)
                 put("dailyLimitMinutes", group.dailyLimitMinutes)
                 put("requireTypedPurpose", group.requireTypedPurpose)
+                put("purposeOptions", JSONArray().apply { group.purposeOptions.forEach { put(it) } })
                 put("apps", JSONArray().apply {
                     group.apps.forEach { app ->
                         put(JSONObject().apply {
@@ -433,4 +448,5 @@ data class RestrictedGroup(
     val apps: List<RestrictedAppEntry>,
     val dailyLimitMinutes: Int = 0,
     val requireTypedPurpose: Boolean = false,
+    val purposeOptions: List<String> = emptyList(),
 )
