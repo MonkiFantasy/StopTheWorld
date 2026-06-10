@@ -8,7 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Process
 import java.text.DateFormat
-import java.util.Calendar
+import dev.stw.blocking.DemoBlockPrefs
 import java.util.Date
 
 data class UsageAppInfo(
@@ -40,12 +40,7 @@ class UsageStatsRepository(private val context: Context) {
     fun loadTodayUsage(limit: Int = 20): List<UsageAppInfo> {
         if (!hasUsageAccess()) return emptyList()
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-        val start = Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
+        val start = DemoBlockPrefs.currentUsageWindowStartMillis(context)
         val end = System.currentTimeMillis()
 
         val openCounts = mutableMapOf<String, Int>()

@@ -22,6 +22,7 @@ object DemoBlockPrefs {
     private const val KEY_SUPPRESS_UNTIL_PREFIX = "suppress_until_"
     private const val KEY_INTENTS = "custom_intents"
     private const val KEY_FLOATING_RUNNING = "floating_running"
+    private const val KEY_DAY_BOUNDARY_MINUTES = "day_boundary_minutes"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
@@ -73,16 +74,33 @@ object DemoBlockPrefs {
 
     fun groupForPackage(context: Context, packageName: String): RestrictedGroup? = groups(context).firstOrNull { group -> group.apps.any { it.packageName == packageName } }
 
-    private fun todayStartMillis(): Long = Calendar.getInstance().apply {
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
-    }.timeInMillis
+    fun dayBoundaryMinutes(context: Context): Int =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .getInt(KEY_DAY_BOUNDARY_MINUTES, 0)
+            .coerceIn(0, 23 * 60 + 59)
+
+    fun setDayBoundaryMinutes(context: Context, minutes: Int) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putInt(KEY_DAY_BOUNDARY_MINUTES, minutes.coerceIn(0, 23 * 60 + 59))
+            .apply()
+    }
+
+    fun formatDayBoundary(minutes: Int): String = "%02d:%02d".format((minutes.coerceIn(0, 1439) / 60), (minutes.coerceIn(0, 1439) % 60))
+
+    fun currentUsageWindowStartMillis(context: Context, now: Long = System.currentTimeMillis()): Long {
+        val boundary = dayBoundaryMinutes(context)
+        val calendar = Calendar.getInstance().apply { timeInMillis = now }
+        calendar.set(Calendar.HOUR_OF_DAY, boundary / 60)
+        calendar.set(Calendar.MINUTE, boundary % 60)
+        calendar.set(Calendar.SECOND, 0)
+        calendar.set(Calendar.MILLISECOND, 0)
+        if (now < calendar.timeInMillis) calendar.add(Calendar.DAY_OF_YEAR, -1)
+        return calendar.timeInMillis
+    }
 
     private fun usageTodayByPackage(context: Context, packages: Set<String>): Map<String, Long> = runCatching {
         if (packages.isEmpty()) return@runCatching emptyMap()
-        val start = todayStartMillis()
+        val start = currentUsageWindowStartMillis(context)
         val now = System.currentTimeMillis()
         val totals = mutableMapOf<String, Long>()
         val activeSince = mutableMapOf<String, Long>()

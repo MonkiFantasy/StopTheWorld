@@ -141,6 +141,7 @@ private data class HomeSnapshot(
     val hasFloatingRunning: Boolean,
     val ignoresBatteryOptimization: Boolean,
     val intentText: String,
+    val dayBoundaryMinutes: Int,
 )
 
 class MainActivity : ComponentActivity() {
@@ -224,6 +225,10 @@ private fun DemoHome(
     var restrictedLabel by remember { mutableStateOf(DemoBlockPrefs.restrictedLabel(context)) }
     var debugState by remember { mutableStateOf(DemoBlockPrefs.debugState(context)) }
     var intentText by remember { mutableStateOf(DemoBlockPrefs.intents(context).joinToString("，")) }
+    var dayBoundaryMinutes by remember { mutableIntStateOf(DemoBlockPrefs.dayBoundaryMinutes(context)) }
+    var showDayBoundaryDialog by remember { mutableStateOf(false) }
+    var dayBoundaryInput by remember { mutableStateOf(DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)) }
+    var dayBoundaryError by remember { mutableStateOf<String?>(null) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -248,6 +253,7 @@ private fun DemoHome(
                 hasFloatingRunning = DemoBlockPrefs.isFloatingRunning(context),
                 ignoresBatteryOptimization = isIgnoringBatteryOptimizations(context),
                 intentText = DemoBlockPrefs.intents(context).joinToString("，"),
+                dayBoundaryMinutes = DemoBlockPrefs.dayBoundaryMinutes(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -263,6 +269,8 @@ private fun DemoHome(
         hasFloatingRunning = snapshot.hasFloatingRunning
         ignoresBatteryOptimization = snapshot.ignoresBatteryOptimization
         intentText = snapshot.intentText
+        dayBoundaryMinutes = snapshot.dayBoundaryMinutes
+        if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
     LaunchedEffect(refreshTick) { refreshAll() }
@@ -274,6 +282,47 @@ private fun DemoHome(
                 delay(1_000)
             }
         }
+    }
+
+    if (showDayBoundaryDialog) {
+        AlertDialog(
+            onDismissRequest = { showDayBoundaryDialog = false },
+            title = { Text("每日重置时间") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("设置“今日使用”和每日限时的分界线，例如 04:00 表示凌晨 4 点后算新一天。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedTextField(
+                        value = dayBoundaryInput,
+                        onValueChange = {
+                            dayBoundaryInput = it
+                            dayBoundaryError = null
+                        },
+                        singleLine = true,
+                        label = { Text("HH:mm / 小时") },
+                        isError = dayBoundaryError != null,
+                        supportingText = { Text(dayBoundaryError ?: "当前：${DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)}") },
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val parsed = parseDayBoundaryInput(dayBoundaryInput)
+                    if (parsed == null) {
+                        dayBoundaryError = "请输入 0-23 或 HH:mm"
+                    } else {
+                        DemoBlockPrefs.setDayBoundaryMinutes(context, parsed)
+                        dayBoundaryMinutes = parsed
+                        dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(parsed)
+                        dayBoundaryError = null
+                        showDayBoundaryDialog = false
+                        refreshTick++
+                    }
+                }) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDayBoundaryDialog = false }) { Text("取消") }
+            },
+        )
     }
 
     val createGroupAction = {
@@ -357,6 +406,12 @@ private fun DemoHome(
                         showDetails = showStatusDetails,
                         onToggleDetails = { showStatusDetails = !showStatusDetails },
                         onRefresh = { refreshTick++ },
+                        dayBoundaryText = DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes),
+                        onConfigureDayBoundary = {
+                            dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)
+                            dayBoundaryError = null
+                            showDayBoundaryDialog = true
+                        },
                     )
                     IntentConfigCard(
                         intentText = intentText,
@@ -456,6 +511,19 @@ private fun DemoHome(
 
 }
 
+private fun parseDayBoundaryInput(raw: String): Int? {
+    val value = raw.trim()
+    if (value.isBlank()) return null
+    if (":" !in value) {
+        val hour = value.toIntOrNull() ?: return null
+        return if (hour in 0..23) hour * 60 else null
+    }
+    val parts = value.split(":", limit = 2)
+    val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: return null
+    val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: return null
+    return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StatusCard(
@@ -474,6 +542,8 @@ private fun StatusCard(
     showDetails: Boolean,
     onToggleDetails: () -> Unit,
     onRefresh: () -> Unit,
+    dayBoundaryText: String,
+    onConfigureDayBoundary: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
@@ -488,6 +558,7 @@ private fun StatusCard(
                 StatusChip("无障碍", hasAccessibility, onClick = onOpenAccessibilitySettings)
                 StatusChip("极速监控", hasFloatingRunning, onClick = onStartFloatingMonitor)
                 StatusChip("省电白名单", ignoresBatteryOptimization, onClick = onOpenBatterySettings)
+                StatusChip("重置 $dayBoundaryText", true, onClick = onConfigureDayBoundary)
                 StatusChip("目标App", totalRestrictedApps > 0)
             }
             Text("$totalRestrictedApps 个目标 App · 监控开关", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -498,6 +569,10 @@ private fun StatusCard(
             OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置") }
             if (showDetails) {
                 Text("点击上方状态标签可进入对应权限/设置；建议开启 Usage、悬浮窗、无障碍，并将省电设为不优化。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("每日重置：$dayBoundaryText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = onConfigureDayBoundary) { Text("修改") }
+                }
                 OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态") }
             }
         }
