@@ -73,6 +73,7 @@ import dev.stw.blocking.RestrictedGroup
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
+import dev.stw.usage.PurposeUsageSegment
 import dev.stw.usage.formatDuration
 import dev.stw.usage.formatTime
 import kotlinx.coroutines.Dispatchers
@@ -131,6 +132,7 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatch
 private data class HomeSnapshot(
     val hasUsageAccess: Boolean,
     val usageRows: List<UsageAppInfo>,
+    val purposeSegments: List<PurposeUsageSegment>,
     val launchableApps: List<LaunchableAppInfo>,
     val groups: List<RestrictedGroup>,
     val restrictedPackage: String?,
@@ -217,6 +219,7 @@ private fun DemoHome(
     val repository = remember { UsageStatsRepository(context.applicationContext) }
     var hasUsageAccess by remember { mutableStateOf(false) }
     var usageRows by remember { mutableStateOf<List<UsageAppInfo>>(emptyList()) }
+    var purposeSegments by remember { mutableStateOf<List<PurposeUsageSegment>>(emptyList()) }
     var launchableApps by remember { mutableStateOf<List<LaunchableAppInfo>>(emptyList()) }
     var groups by remember { mutableStateOf(DemoBlockPrefs.groups(context)) }
     var selectedGroupId by remember { mutableStateOf(groups.firstOrNull()?.id ?: "default") }
@@ -243,6 +246,7 @@ private fun DemoHome(
             HomeSnapshot(
                 hasUsageAccess = repository.hasUsageAccess(),
                 usageRows = repository.loadTodayUsage(limit = 200),
+                purposeSegments = repository.loadTargetPurposeSegments(DemoBlockPrefs.restrictedPackages(context), limit = 120),
                 launchableApps = repository.loadLaunchableApps(),
                 groups = DemoBlockPrefs.groups(context),
                 restrictedPackage = DemoBlockPrefs.restrictedPackage(context),
@@ -258,6 +262,7 @@ private fun DemoHome(
         }
         hasUsageAccess = snapshot.hasUsageAccess
         usageRows = snapshot.usageRows
+        purposeSegments = snapshot.purposeSegments
         launchableApps = snapshot.launchableApps
         groups = snapshot.groups
         if (groups.none { it.id == selectedGroupId }) selectedGroupId = groups.firstOrNull()?.id ?: "default"
@@ -466,7 +471,7 @@ private fun DemoHome(
                     },
                 )
                 2 -> {
-                    UsageStatsOverviewCard(usageRows = usageRows, groups = groups)
+                    UsageStatsOverviewCard(usageRows = usageRows, groups = groups, purposeSegments = purposeSegments)
                 }
                 3 -> {
                     TestAndDebugCard(
@@ -686,6 +691,7 @@ private fun AppPurposeConfigCard(
 private fun UsageStatsOverviewCard(
     usageRows: List<UsageAppInfo>,
     groups: List<RestrictedGroup>,
+    purposeSegments: List<PurposeUsageSegment>,
 ) {
     var mode by remember { mutableStateOf("app") }
     val usageByPackage = remember(usageRows) { usageRows.associateBy { it.packageName } }
@@ -705,14 +711,17 @@ private fun UsageStatsOverviewCard(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("应用使用时间统计", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text("按今天 0 点到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("按当前每日重置时间到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
                 AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
+                AssistChip(onClick = { mode = "purpose" }, label = { Text(if (mode == "purpose") "✓ 目的时段" else "目的时段") })
             }
-            if (mode == "group") {
+            if (mode == "purpose") {
+                PurposeSegmentsList(purposeSegments)
+            } else if (mode == "group") {
                 if (groupRows.isEmpty()) {
                     Text("暂无分组。", style = MaterialTheme.typography.bodySmall)
                 }
@@ -744,6 +753,40 @@ private fun UsageStatsOverviewCard(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PurposeSegmentsList(segments: List<PurposeUsageSegment>) {
+    if (segments.isEmpty()) {
+        Text("暂无目标 App 的目的时段。需要在提醒页选择/输入目的并继续打开后才会记录。", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    val byApp = segments.groupBy { it.packageName }
+    byApp.forEach { (_, appSegments) ->
+        val first = appSegments.first()
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(first.appLabel, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(formatDuration(appSegments.sumOf { it.usedMillis }), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+            val purposeTotals = appSegments.groupBy { it.purpose }.mapValues { entry -> entry.value.sumOf { it.usedMillis } }
+                .toList().sortedByDescending { it.second }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                purposeTotals.forEach { (purpose, total) ->
+                    AssistChip(onClick = {}, label = { Text("$purpose · ${formatDuration(total)}") })
+                }
+            }
+            appSegments.take(6).forEach { segment ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text("${formatTime(segment.startMillis)}-${formatTime(segment.endMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    Text(segment.purpose, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(" · ${formatDuration(segment.usedMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+        HorizontalDivider()
     }
 }
 

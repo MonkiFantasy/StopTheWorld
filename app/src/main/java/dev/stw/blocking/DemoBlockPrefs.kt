@@ -23,6 +23,7 @@ object DemoBlockPrefs {
     private const val KEY_INTENTS = "custom_intents"
     private const val KEY_FLOATING_RUNNING = "floating_running"
     private const val KEY_DAY_BOUNDARY_MINUTES = "day_boundary_minutes"
+    private const val KEY_PURPOSE_RECORDS = "purpose_records"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
@@ -338,11 +339,67 @@ object DemoBlockPrefs {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getBoolean(KEY_FLOATING_RUNNING, false)
 
     fun setUnlockUntil(context: Context, packageName: String, untilMillis: Long, intent: String?) {
+        val now = System.currentTimeMillis()
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_UNLOCK_UNTIL_PREFIX + packageName, untilMillis)
             .putString(KEY_LAST_INTENT_PREFIX + packageName, intent)
             .apply()
+        intent?.trim()?.takeIf { it.isNotBlank() }?.let { purpose ->
+            addPurposeRecord(context, PurposeRecord(packageName, labelForPackage(context, packageName) ?: packageName, purpose, now, untilMillis))
+        }
     }
+
+    fun purposeRecordsForWindow(context: Context, startMillis: Long, endMillis: Long, packages: Set<String>): List<PurposeRecord> =
+        purposeRecords(context).filter { record ->
+            record.packageName in packages && record.untilMillis >= startMillis && record.startMillis <= endMillis
+        }
+
+    private fun addPurposeRecord(context: Context, record: PurposeRecord) {
+        val windowStart = currentUsageWindowStartMillis(context)
+        val updated = (purposeRecords(context).filter { it.untilMillis >= windowStart - 24 * 60 * 60_000L } + record)
+            .sortedByDescending { it.startMillis }
+            .take(500)
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_PURPOSE_RECORDS, encodePurposeRecords(updated))
+            .apply()
+    }
+
+    private fun purposeRecords(context: Context): List<PurposeRecord> {
+        val raw = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_PURPOSE_RECORDS, null) ?: return emptyList()
+        return parsePurposeRecords(raw)
+    }
+
+    private fun parsePurposeRecords(raw: String): List<PurposeRecord> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val pkg = obj.optString("packageName")
+                val purpose = obj.optString("purpose")
+                if (pkg.isNotBlank() && purpose.isNotBlank()) {
+                    add(PurposeRecord(
+                        packageName = pkg,
+                        label = obj.optString("label", pkg),
+                        purpose = purpose,
+                        startMillis = obj.optLong("startMillis", 0L),
+                        untilMillis = obj.optLong("untilMillis", 0L),
+                    ))
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodePurposeRecords(records: List<PurposeRecord>): String = JSONArray().apply {
+        records.forEach { record ->
+            put(JSONObject().apply {
+                put("packageName", record.packageName)
+                put("label", record.label)
+                put("purpose", record.purpose)
+                put("startMillis", record.startMillis)
+                put("untilMillis", record.untilMillis)
+            })
+        }
+    }.toString()
 
     fun unlockUntil(context: Context, packageName: String): Long =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_UNLOCK_UNTIL_PREFIX + packageName, 0L)
@@ -428,6 +485,14 @@ object DemoBlockPrefs {
         )
     }
 }
+
+data class PurposeRecord(
+    val packageName: String,
+    val label: String,
+    val purpose: String,
+    val startMillis: Long,
+    val untilMillis: Long,
+)
 
 data class DemoDebugState(
     val lastSeenPackage: String?,

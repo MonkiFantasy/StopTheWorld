@@ -24,6 +24,15 @@ data class LaunchableAppInfo(
     val appLabel: String,
 )
 
+data class PurposeUsageSegment(
+    val packageName: String,
+    val appLabel: String,
+    val purpose: String,
+    val startMillis: Long,
+    val endMillis: Long,
+    val usedMillis: Long,
+)
+
 class UsageStatsRepository(private val context: Context) {
     private val packageManager = context.packageManager
 
@@ -94,6 +103,61 @@ class UsageStatsRepository(private val context: Context) {
             }
             .sortedByDescending { it.usedMillis }
             .take(limit)
+    }
+
+
+    fun loadTargetPurposeSegments(packages: Set<String>, limit: Int = 80): List<PurposeUsageSegment> {
+        if (!hasUsageAccess() || packages.isEmpty()) return emptyList()
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val start = DemoBlockPrefs.currentUsageWindowStartMillis(context)
+        val end = System.currentTimeMillis()
+        val purposeRecords = DemoBlockPrefs.purposeRecordsForWindow(context, start, end, packages)
+        val activeSince = mutableMapOf<String, Long>()
+        val sessions = mutableListOf<Triple<String, Long, Long>>()
+        val event = UsageEvents.Event()
+        val events = usageStatsManager.queryEvents(start, end)
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName?.takeIf { it in packages } ?: continue
+            val at = event.timeStamp.coerceIn(start, end)
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> activeSince.putIfAbsent(pkg, at)
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    val since = activeSince.remove(pkg)
+                    if (since != null && at > since) sessions += Triple(pkg, since, at)
+                }
+                UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    activeSince.toMap().forEach { (activePkg, since) ->
+                        if (at > since) sessions += Triple(activePkg, since, at)
+                    }
+                    activeSince.clear()
+                }
+            }
+        }
+        activeSince.forEach { (pkg, since) -> if (end > since) sessions += Triple(pkg, since, end) }
+
+        return sessions.asSequence()
+            .mapNotNull { (pkg, sessionStart, sessionEnd) ->
+                val used = sessionEnd - sessionStart
+                if (used <= 0L) return@mapNotNull null
+                val matched = purposeRecords
+                    .filter { it.packageName == pkg && it.startMillis <= sessionEnd && it.untilMillis >= sessionStart }
+                    .maxByOrNull { it.startMillis }
+                PurposeUsageSegment(
+                    packageName = pkg,
+                    appLabel = DemoBlockPrefs.labelForPackage(context, pkg) ?: labelFor(pkg),
+                    purpose = matched?.purpose ?: "未记录目的",
+                    startMillis = sessionStart,
+                    endMillis = sessionEnd,
+                    usedMillis = used,
+                )
+            }
+            .sortedByDescending { it.startMillis }
+            .take(limit)
+            .toList()
     }
 
     fun loadLaunchableApps(): List<LaunchableAppInfo> {
