@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -21,10 +22,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -39,8 +43,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -60,8 +62,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -359,7 +365,12 @@ private fun DemoHome(
         newGroupName = ""
     }
 
-    val tabs = listOf("首页" to "⌂", "分组" to "▤", "统计" to "◈", "测试" to "⚙")
+    val tabs = listOf(
+        BottomTab("首页", "home"),
+        BottomTab("分组", "layers"),
+        BottomTab("统计", "grid"),
+        BottomTab("测试", "settings"),
+    )
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -372,30 +383,11 @@ private fun DemoHome(
         Scaffold(
             containerColor = Color.Transparent,
             bottomBar = {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .height(64.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainer,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)),
-                    shadowElevation = 3.dp,
-                ) {
-                    NavigationBar(
-                        containerColor = Color.Transparent,
-                        tonalElevation = 0.dp,
-                    ) {
-                        tabs.forEachIndexed { index, item ->
-                            NavigationBarItem(
-                                selected = selectedTab == index,
-                                onClick = { selectedTab = index },
-                                icon = { Text(item.second, color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)) },
-                                label = { Text(item.first, style = MaterialTheme.typography.labelSmall) },
-                            )
-                        }
-                    }
-                }
+                DroidStyleBottomBar(
+                    tabs = tabs,
+                    selectedIndex = selectedTab,
+                    onSelect = { selectedTab = it },
+                )
             },
         ) { innerPadding ->
             Column(
@@ -536,6 +528,131 @@ private fun DemoHome(
         }
     }
 
+}
+
+private data class BottomTab(val label: String, val icon: String)
+
+@Composable
+private fun DroidStyleBottomBar(
+    tabs: List<BottomTab>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(86.dp),
+        color = Color(0xFFF0EFF7),
+        shadowElevation = 2.dp,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            HorizontalDivider(color = Color(0xFFE0DFE8))
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    DroidStyleNavItem(
+                        tab = tab,
+                        selected = selectedIndex == index,
+                        onClick = { onSelect(index) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DroidStyleNavItem(
+    tab: BottomTab,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val activeColor = Color(0xFF4F6397)
+    val inactiveColor = Color(0xFF7A7D86)
+    val color = if (selected) activeColor else inactiveColor
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .width(if (selected) 122.dp else 78.dp)
+            .fillMaxHeight(),
+        shape = RoundedCornerShape(24.dp),
+        color = if (selected) Color(0xFFDCDCEB) else Color.Transparent,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            NavGlyph(tab.icon, color, Modifier.size(26.dp))
+            Text(
+                tab.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = color,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        val stroke = Stroke(width = w * 0.12f)
+        when (kind) {
+            "home" -> {
+                val roof = Path().apply {
+                    moveTo(w * 0.14f, h * 0.48f)
+                    lineTo(w * 0.50f, h * 0.16f)
+                    lineTo(w * 0.86f, h * 0.48f)
+                    lineTo(w * 0.78f, h * 0.48f)
+                    lineTo(w * 0.78f, h * 0.86f)
+                    lineTo(w * 0.58f, h * 0.86f)
+                    lineTo(w * 0.58f, h * 0.62f)
+                    lineTo(w * 0.42f, h * 0.62f)
+                    lineTo(w * 0.42f, h * 0.86f)
+                    lineTo(w * 0.22f, h * 0.86f)
+                    lineTo(w * 0.22f, h * 0.48f)
+                    close()
+                }
+                drawPath(roof, color)
+            }
+            "layers" -> {
+                val p1 = Path().apply { moveTo(w * 0.50f, h * 0.12f); lineTo(w * 0.86f, h * 0.32f); lineTo(w * 0.50f, h * 0.52f); lineTo(w * 0.14f, h * 0.32f); close() }
+                val p2 = Path().apply { moveTo(w * 0.18f, h * 0.50f); lineTo(w * 0.50f, h * 0.68f); lineTo(w * 0.82f, h * 0.50f) }
+                val p3 = Path().apply { moveTo(w * 0.18f, h * 0.68f); lineTo(w * 0.50f, h * 0.86f); lineTo(w * 0.82f, h * 0.68f) }
+                drawPath(p1, color)
+                drawPath(p2, color, style = stroke)
+                drawPath(p3, color, style = stroke)
+            }
+            "grid" -> {
+                val gap = w * 0.10f
+                val cell = w * 0.28f
+                listOf(0f, 1f).forEach { row ->
+                    listOf(0f, 1f).forEach { col ->
+                        drawRect(color, topLeft = Offset(w * 0.20f + col * (cell + gap), h * 0.20f + row * (cell + gap)), size = Size(cell, cell))
+                    }
+                }
+            }
+            else -> {
+                drawCircle(color, radius = w * 0.13f, center = Offset(w * 0.50f, h * 0.50f))
+                repeat(8) { i ->
+                    val angle = (Math.PI * 2.0 * i / 8.0).toFloat()
+                    val sx = w * 0.50f + kotlin.math.cos(angle) * w * 0.26f
+                    val sy = h * 0.50f + kotlin.math.sin(angle) * h * 0.26f
+                    val ex = w * 0.50f + kotlin.math.cos(angle) * w * 0.40f
+                    val ey = h * 0.50f + kotlin.math.sin(angle) * h * 0.40f
+                    drawLine(color, Offset(sx, sy), Offset(ex, ey), strokeWidth = w * 0.10f)
+                }
+            }
+        }
+    }
 }
 
 private fun parseDayBoundaryInput(raw: String): Int? {
