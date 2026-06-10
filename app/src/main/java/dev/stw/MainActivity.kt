@@ -696,6 +696,16 @@ private fun UsageStatsOverviewCard(
     purposeSegments: List<PurposeUsageSegment>,
 ) {
     var mode by remember { mutableStateOf("app") }
+    var appSort by remember { mutableStateOf("time_desc") }
+    val totalPhoneUsage = remember(usageRows) { usageRows.sumOf { it.usedMillis } }
+    val sortedUsageRows = remember(usageRows, appSort) {
+        when (appSort) {
+            "time_asc" -> usageRows.sortedBy { it.usedMillis }
+            "count_desc" -> usageRows.sortedWith(compareByDescending<UsageAppInfo> { it.openCount }.thenByDescending { it.usedMillis })
+            "count_asc" -> usageRows.sortedWith(compareBy<UsageAppInfo> { it.openCount }.thenBy { it.usedMillis })
+            else -> usageRows.sortedByDescending { it.usedMillis }
+        }
+    }
     val usageByPackage = remember(usageRows) { usageRows.associateBy { it.packageName } }
     val groupRows = remember(usageRows, groups) {
         groups.map { group ->
@@ -715,6 +725,7 @@ private fun UsageStatsOverviewCard(
                 Text("按当前每日重置时间到现在的前台会话统计。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        Text("今日使用手机时长：${formatDuration(totalPhoneUsage)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
             AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
@@ -738,10 +749,16 @@ private fun UsageStatsOverviewCard(
                 if (index != groupRows.lastIndex) HorizontalDivider()
             }
         } else {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AssistChip(onClick = { appSort = "time_desc" }, label = { Text(if (appSort == "time_desc") "✓ 时长↓" else "时长↓", style = MaterialTheme.typography.labelSmall) })
+                AssistChip(onClick = { appSort = "time_asc" }, label = { Text(if (appSort == "time_asc") "✓ 时长↑" else "时长↑", style = MaterialTheme.typography.labelSmall) })
+                AssistChip(onClick = { appSort = "count_desc" }, label = { Text(if (appSort == "count_desc") "✓ 次数↓" else "次数↓", style = MaterialTheme.typography.labelSmall) })
+                AssistChip(onClick = { appSort = "count_asc" }, label = { Text(if (appSort == "count_asc") "✓ 次数↑" else "次数↑", style = MaterialTheme.typography.labelSmall) })
+            }
             if (usageRows.isEmpty()) {
                 Text("暂无数据。请确认 Usage Access 已授权，然后使用几个 App 后刷新。", style = MaterialTheme.typography.bodySmall)
             }
-            usageRows.forEachIndexed { index, row ->
+            sortedUsageRows.forEachIndexed { index, row ->
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         Text("${index + 1}. ${row.appLabel}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -750,7 +767,7 @@ private fun UsageStatsOverviewCard(
                     Text("打开 ${row.openCount} 次 · 最近 ${formatTime(row.lastTimeUsedMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(row.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                if (index != usageRows.lastIndex) HorizontalDivider()
+                if (index != sortedUsageRows.lastIndex) HorizontalDivider()
             }
         }
     }
@@ -1232,6 +1249,7 @@ private fun GroupAppsPanel(
                         currentPackages = currentPackages,
                         selectedGroupName = group.name,
                         onSelect = { packageName, label -> onAddAppToGroup(group.id, packageName, label) },
+                        onRemove = { packageName -> onRemoveApp(group.id, packageName) },
                     )
                 }
             },
@@ -1270,6 +1288,7 @@ private fun RestrictedAppPicker(
     currentPackages: Set<String>,
     selectedGroupName: String,
     onSelect: (String, String) -> Unit,
+    onRemove: (String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf("all") }
@@ -1320,8 +1339,12 @@ private fun RestrictedAppPicker(
                 label = app.appLabel,
                 packageName = app.packageName,
                 selected = app.packageName in currentPackages,
-                subtitle = usage?.let { "${formatDuration(it.usedMillis)} · 打开 ${it.openCount} 次" } ?: if (app.packageName in usagePackages) "今日使用过" else "全部应用",
-                onClick = { onSelect(app.packageName, app.appLabel) },
+                subtitle = (if (app.packageName in currentPackages) "已选择 · 再点取消" else null)
+                    ?: usage?.let { "${formatDuration(it.usedMillis)} · 打开 ${it.openCount} 次" }
+                    ?: if (app.packageName in usagePackages) "今日使用过" else "全部应用",
+                onClick = {
+                    if (app.packageName in currentPackages) onRemove(app.packageName) else onSelect(app.packageName, app.appLabel)
+                },
             )
         }
         if (filteredApps.size > visibleApps.size) {
