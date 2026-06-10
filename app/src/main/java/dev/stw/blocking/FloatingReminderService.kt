@@ -21,6 +21,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import dev.stw.blocking.LimitSource
 
@@ -167,7 +168,13 @@ class FloatingReminderService : Service() {
             background = rounded(Color.WHITE, 24.dp)
             elevation = 10f
         }
-        root.addView(card, LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
+        val scroller = ScrollView(this).apply {
+            isFillViewport = false
+            clipToPadding = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+        }
+        scroller.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        root.addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
         card.addText("时停 · Stop the World", 12f, true, if (overLimit) Color.rgb(185, 28, 28) else Color.rgb(37, 99, 235), 0)
         card.addText(if (overLimit) "已经超时" else "先停一下", 30f, true, Color.rgb(15, 23, 42), 10.dp)
         card.addText("你正在打开 $appLabel", 17f, true, Color.rgb(51, 65, 85), 4.dp)
