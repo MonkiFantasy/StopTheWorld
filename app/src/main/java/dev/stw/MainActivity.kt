@@ -47,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,8 +63,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.style.TextOverflow
 import dev.stw.blocking.AccessibilityStatus
 import dev.stw.blocking.DemoBlockPrefs
@@ -101,6 +104,25 @@ private val DayColors = lightColorScheme(
 
 private val NeonBorderBrush = Brush.linearGradient(
     listOf(Color(0xFF22D3EE), Color(0xFFA78BFA), Color(0xFFF472B6), Color(0xFFFACC15)),
+)
+
+
+private val CompactTypography = Typography(
+    displayLarge = TextStyle(fontSize = 22.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
+    displayMedium = TextStyle(fontSize = 20.sp, lineHeight = 26.sp, fontWeight = FontWeight.SemiBold),
+    displaySmall = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    headlineLarge = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
+    headlineMedium = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    headlineSmall = TextStyle(fontSize = 16.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold),
+    titleLarge = TextStyle(fontSize = 17.sp, lineHeight = 23.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 15.sp, lineHeight = 21.sp, fontWeight = FontWeight.SemiBold),
+    titleSmall = TextStyle(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold),
+    bodyLarge = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal),
+    bodyMedium = TextStyle(fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal),
+    bodySmall = TextStyle(fontSize = 12.sp, lineHeight = 17.sp, fontWeight = FontWeight.Normal),
+    labelLarge = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold),
+    labelMedium = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.SemiBold),
+    labelSmall = TextStyle(fontSize = 11.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium),
 )
 
 private val DroidSpacesLightColors = lightColorScheme(
@@ -192,7 +214,7 @@ fun StopTheWorldDemoApp(
     onStartFloatingMonitor: () -> Unit,
     onStopFloatingMonitor: () -> Unit,
 ) {
-    MaterialTheme(colorScheme = DroidSpacesLightColors) {
+    MaterialTheme(colorScheme = DroidSpacesLightColors, typography = CompactTypography) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             DemoHome(
                 onOpenUsageAccess = onOpenUsageAccess,
@@ -386,10 +408,10 @@ private fun DemoHome(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer, border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f))) {
-                        Text("时", modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
+                        Text("时", modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                     }
                     Column {
-                        Text("时停", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                        Text("时停", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onBackground)
                         Text("Stop the World", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -568,17 +590,17 @@ private fun StatusCard(
             }
             Text("$totalRestrictedApps 个目标 App · 监控开关", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控") }
-                OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底") }
+                Button(onClick = onStartFloatingMonitor, modifier = Modifier.weight(1f)) { Text("启动兜底监控", style = MaterialTheme.typography.labelMedium) }
+                OutlinedButton(onClick = onStopFloatingMonitor, modifier = Modifier.weight(1f)) { Text("停止兜底", style = MaterialTheme.typography.labelMedium) }
             }
-            OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置") }
+            OutlinedButton(onClick = onToggleDetails, modifier = Modifier.fillMaxWidth()) { Text(if (showDetails) "收起状态监测" else "状态监测 / 权限设置", style = MaterialTheme.typography.labelMedium) }
             if (showDetails) {
                 Text("点击上方状态标签可进入对应权限/设置；建议开启 Usage、悬浮窗、无障碍，并将省电设为不优化。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("每日重置：$dayBoundaryText", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                    OutlinedButton(onClick = onConfigureDayBoundary) { Text("修改") }
+                    OutlinedButton(onClick = onConfigureDayBoundary) { Text("修改", style = MaterialTheme.typography.labelMedium) }
                 }
-                OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态") }
+                OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新状态", style = MaterialTheme.typography.labelMedium) }
             }
         }
     }
@@ -590,7 +612,7 @@ private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
     val fg = if (ok) Color(0xFF486052) else Color(0xFF7B5656)
     ElevatedAssistChip(
         onClick = onClick,
-        label = { Text("${if (ok) "✓" else "!"} $label") },
+        label = { Text("${if (ok) "✓" else "!"} $label", style = MaterialTheme.typography.labelSmall) },
         colors = androidx.compose.material3.AssistChipDefaults.elevatedAssistChipColors(
             containerColor = bg,
             labelColor = fg,
@@ -603,12 +625,12 @@ private fun DebugCard(debugState: DemoDebugState) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("触发调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}")
-            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}")
-            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
-            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
-            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
-            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
+            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("当前策略：无障碍负责即时事件，兜底监控负责 MIUI/OEM 延迟事件补偿；两路共用触发锁，只取包名/窗口身份，不读取文本。")
         }
     }
@@ -627,10 +649,11 @@ private fun IntentConfigCard(
             OutlinedTextField(
                 value = intentText,
                 onValueChange = onIntentTextChange,
-                label = { Text("意图列表") },
+                label = { Text("意图列表", style = MaterialTheme.typography.labelSmall) },
+                textStyle = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项") }
+            Button(onClick = onSave, modifier = Modifier.fillMaxWidth()) { Text("保存意图选项", style = MaterialTheme.typography.labelMedium) }
         }
     }
 }
@@ -646,9 +669,9 @@ private fun AppPurposeConfigCard(
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("应用级目的配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("可针对某个应用覆盖目的选项；打开该应用时优先使用这里的设置。")
+            Text("可针对某个应用覆盖目的选项；打开该应用时优先使用这里的设置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (apps.isEmpty()) {
-                Text("当前分组暂无 App。先在上方添加目标 App。")
+                Text("当前分组暂无 App。先在上方添加目标 App。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             apps.forEach { app ->
                 var options by remember(app.packageName, app.purposeOptions) { mutableStateOf(app.purposeOptions.joinToString("，")) }
@@ -656,7 +679,7 @@ private fun AppPurposeConfigCard(
                 var limitText by remember(app.packageName, app.dailyLimitMinutes) { mutableStateOf(if (app.dailyLimitMinutes > 0) app.dailyLimitMinutes.toString() else "") }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(18.dp)) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(app.label, fontWeight = FontWeight.Bold)
+                        Text(app.label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                         Text(app.packageName, style = MaterialTheme.typography.bodySmall)
                         OutlinedTextField(
                             value = options,
@@ -673,7 +696,7 @@ private fun AppPurposeConfigCard(
                         )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.weight(1f)) {
-                                Text("该应用要求手动输入目的")
+                                Text("该应用要求手动输入目的", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                                 Text("关闭则显示上面的目的选项；空选项时使用全局目的。", style = MaterialTheme.typography.bodySmall)
                             }
                             Switch(checked = typed, onCheckedChange = { typed = it })
@@ -848,7 +871,7 @@ private fun GroupManagementCard(
             shape = RoundedCornerShape(22.dp),
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text("分组", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                 Text("只显示分组卡片；点按选择，长按卡片展开二级菜单。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (groups.isEmpty()) {
                     Text("暂无分组。点击右下角添加分组。", style = MaterialTheme.typography.bodySmall)
@@ -894,8 +917,8 @@ private fun GroupManagementCard(
             Text(
                 "＋ 添加分组",
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimary,
             )
         }
@@ -1274,15 +1297,15 @@ private fun TestAndDebugCard(
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("测试与调试", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-            Text("这里是开发测试区，和上面的日常使用/分组配置分开。")
-            Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App") }
+            Text("这里是开发测试区，和上面的日常使用/分组配置分开。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App", style = MaterialTheme.typography.labelMedium) }
             OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新调试信息") }
-            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}")
-            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}")
-            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}")
-            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}")
-            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}")
-            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}")
+            Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1383,10 +1406,10 @@ private fun RuleCard(rule: AppRule, state: AppRuntimeState) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("当前规则：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("今日已使用：${state.usedTodayMillis / 60_000} / ${rule.dailyLimitMinutes} 分钟")
-            Text("今日已打开：${state.openCountToday} / ${rule.maxOpenCountPerDay} 次")
-            Text("打开前等待：10 秒")
-            Text("短解锁时长：5 分钟")
+            Text("今日已使用：${state.usedTodayMillis / 60_000} / ${rule.dailyLimitMinutes} 分钟", style = MaterialTheme.typography.bodySmall)
+            Text("今日已打开：${state.openCountToday} / ${rule.maxOpenCountPerDay} 次", style = MaterialTheme.typography.bodySmall)
+            Text("打开前等待：10 秒", style = MaterialTheme.typography.bodySmall)
+            Text("短解锁时长：5 分钟", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -1408,7 +1431,7 @@ private fun FirstOpenInterventionCard(rule: AppRule, decision: Decision) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), shape = RoundedCornerShape(20.dp), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Text("提醒页预览：${rule.appLabel}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("先停一下", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("先停一下", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
 
             val message = when (decision) {
                 is Decision.ShowDelay -> decision.message
@@ -1416,9 +1439,9 @@ private fun FirstOpenInterventionCard(rule: AppRule, decision: Decision) {
                 is Decision.ForcedRest -> "现在处于强制休息中"
                 Decision.Allow -> "当前允许使用"
             }
-            Text("“$message”")
+            Text("“$message”", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            Text("这次打开是为了：", fontWeight = FontWeight.SemiBold)
+            Text("这次打开是为了：", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf("查资料", "回复消息", "娱乐休息", "无聊", "逃避任务", "其他").forEach { intent ->
                     AssistChip(
@@ -1428,7 +1451,7 @@ private fun FirstOpenInterventionCard(rule: AppRule, decision: Decision) {
                 }
             }
 
-            Text(if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。")
+            Text(if (countdown > 0) "还需等待 $countdown 秒" else "可以继续，但建议确认是否真的需要。", style = MaterialTheme.typography.bodySmall)
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(onClick = {}, modifier = Modifier.weight(1f)) { Text("不打开了") }
