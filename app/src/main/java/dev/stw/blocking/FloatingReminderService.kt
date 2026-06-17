@@ -11,6 +11,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
@@ -80,28 +81,58 @@ class FloatingReminderService : Service() {
             DemoBlockPrefs.markSkip(this, "overlay_permission_missing")
             return
         }
-        val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
-        if (restrictedPackages.isEmpty()) {
-            DemoBlockPrefs.markSkip(this, "monitor_running_no_restricted")
+        val now = System.currentTimeMillis()
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (!powerManager.isInteractive) {
+            DemoBlockPrefs.markScreenInteractive(this, false, now)
             return
         }
         val fg = latestForegroundPackage() ?: run {
             DemoBlockPrefs.markSkip(this, "monitor_running_fg_null")
             return
         }
+        DemoBlockPrefs.markScreenInteractive(this, true, now)
         if (fg != lastForegroundPackage) {
             lastForegroundPackage = fg
             DemoBlockPrefs.markSeen(this, fg)
         }
+        if (checkGlobalBreak(fg, now)) return
+
+        val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
+        if (restrictedPackages.isEmpty()) {
+            DemoBlockPrefs.markSkip(this, "monitor_running_no_restricted")
+            return
+        }
         if (fg == packageName) return
         if (fg !in restrictedPackages) return
-        val now = System.currentTimeMillis()
         if (DemoBlockPrefs.unlockUntil(this, fg) > now) return
         if (overlayView != null && overlayPackage == fg) return
         if (now - lastTriggerAt < 700L) return
         if (!DemoBlockPrefs.canShowBlock(this, fg, now, "fallback_usage_poll")) return
         lastTriggerAt = now
         showOverlay(fg, DemoBlockPrefs.labelForPackage(this, fg) ?: fg, "fallback_usage_poll")
+    }
+
+    private fun checkGlobalBreak(fg: String, now: Long): Boolean {
+        DemoBlockPrefs.finishGlobalRestIfExpired(this, now)
+        val settings = DemoBlockPrefs.globalBreakSettings(this)
+        if (!settings.enabled || fg.isIgnoredGlobalPackage()) return false
+        val restUntil = settings.restUntil
+        if (restUntil > now) {
+            if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
+            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            showGlobalRestOverlay(restUntil - now)
+            return true
+        }
+        val since = settings.screenOnSince.takeIf { it > 0L } ?: DemoBlockPrefs.markScreenInteractive(this, true, now)
+        val elapsed = now - since
+        if (elapsed >= settings.limitMinutes * 60_000L) {
+            if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
+            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            showGlobalBreakPrompt(elapsed, settings.restOptionsMinutes)
+            return true
+        }
+        return false
     }
 
     private fun latestForegroundPackage(): String? = runCatching {
@@ -152,8 +183,7 @@ class FloatingReminderService : Service() {
             onCancel = {
                 DemoBlockPrefs.suppressAfterCancel(this, packageName)
                 hideOverlay()
-                val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                startActivity(home)
+                goHome()
             },
             onContinue = { chosen, addToPreset ->
                 if (addToPreset && !chosen.isNullOrBlank()) DemoBlockPrefs.addPurposePresetForPackage(this, packageName, chosen)
@@ -173,6 +203,64 @@ class FloatingReminderService : Service() {
             overlayPackage = null
             DemoBlockPrefs.markSkip(this, "float_overlay_error:${it.javaClass.simpleName}")
         }
+    }
+
+    private fun showGlobalBreakPrompt(screenOnMillis: Long, restOptionsMinutes: List<Int>) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = GLOBAL_BREAK_PACKAGE
+        val view = BlockOverlayUi.buildGlobalBreakPrompt(
+            context = this,
+            screenOnMillis = screenOnMillis,
+            restOptionsMinutes = restOptionsMinutes,
+            onRest = { minutes ->
+                val now = System.currentTimeMillis()
+                DemoBlockPrefs.setGlobalRestUntil(this, now + minutes * 60_000L, now)
+                hideOverlay()
+                goHome()
+            },
+            onSkip = {
+                DemoBlockPrefs.clearGlobalRestForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching { windowManager?.addView(view, fullParams()) }
+            .onFailure { error ->
+                overlayView = null
+                overlayPackage = null
+                DemoBlockPrefs.markSkip(this, "global_break_overlay_error:${error.javaClass.simpleName}")
+            }
+    }
+
+    private fun showGlobalRestOverlay(remainingMillis: Long) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = GLOBAL_BREAK_PACKAGE
+        val view = BlockOverlayUi.buildGlobalRestPrompt(
+            context = this,
+            remainingMillis = remainingMillis,
+            onHome = {
+                hideOverlay()
+                goHome()
+            },
+            onSkip = {
+                DemoBlockPrefs.clearGlobalRestForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching { windowManager?.addView(view, fullParams()) }
+            .onFailure { error ->
+                overlayView = null
+                overlayPackage = null
+                DemoBlockPrefs.markSkip(this, "global_rest_overlay_error:${error.javaClass.simpleName}")
+            }
+    }
+
+    private fun goHome() {
+        val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(home)
     }
 
     private fun showMini(intentText: String) {
@@ -229,9 +317,17 @@ class FloatingReminderService : Service() {
         }
     }
 
+    private fun String.isIgnoredGlobalPackage(): Boolean =
+        this == packageName ||
+            this == "com.android.systemui" ||
+            this.contains("launcher", ignoreCase = true) ||
+            this.contains("inputmethod", ignoreCase = true) ||
+            this.contains("home", ignoreCase = true)
+
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 
     companion object {
+        private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
         private const val POLL_MS = 250L
         private const val NOTIFICATION_ID = 4301
         const val ACTION_STOP = "dev.stw.blocking.STOP_FLOATING_REMINDER"

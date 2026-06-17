@@ -296,6 +296,126 @@ object BlockOverlayUi {
         return BlockOverlayHandles(root, countdownText, cont)
     }
 
+    fun buildGlobalBreakPrompt(
+        context: Context,
+        screenOnMillis: Long,
+        restOptionsMinutes: List<Int>,
+        onRest: (Int) -> Unit,
+        onSkip: () -> Unit,
+    ): View {
+        fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
+        fun rounded(color: Int, radiusDp: Int): GradientDrawable =
+            GradientDrawable().apply { setColor(color); cornerRadius = radiusDp.dp().toFloat() }
+        fun addText(parent: LinearLayout, textValue: String, sizeSp: Float, bold: Boolean, color: Int, topDp: Int = 0) {
+            parent.addView(TextView(context).apply {
+                text = textValue
+                textSize = sizeSp
+                setTextColor(color)
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, topDp.dp(), 0, 2.dp())
+            })
+        }
+        fun button(textValue: String, bg: Int, fg: Int, onClick: () -> Unit) = TextView(context).apply {
+            text = textValue
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(fg)
+            background = rounded(bg, 18)
+            setPadding(10.dp(), 0, 10.dp(), 0)
+            setOnClickListener { onClick() }
+        }
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22.dp(), 20.dp(), 22.dp(), 20.dp())
+            background = rounded(Color.WHITE, 24)
+            elevation = 12f
+        }
+        addText(card, "时停 · 全局屏幕休息", 12f, true, primary)
+        addText(card, "该休息一下", 30f, true, textStrong, 10)
+        addText(card, "连续亮屏已超过 ${DemoBlockPrefs.compactDuration(screenOnMillis)}。选一个休息时长，时停会先带你回到主界面。", 15f, false, textBody, 6)
+
+        restOptionsMinutes.ifEmpty { listOf(5, 10, 15) }.chunked(2).forEach { rowItems ->
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 4.dp(), 0, 0) }
+            rowItems.forEach { minutes ->
+                row.addView(
+                    button("休息 ${minutes} 分钟", primary, Color.WHITE) { onRest(minutes) },
+                    LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp()) },
+                )
+            }
+            if (rowItems.size == 1) row.addView(View(context), LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp()) })
+            card.addView(row)
+        }
+
+        card.addView(button("跳过本次（测试）", primaryContainer, onPrimaryContainer, onSkip), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 44.dp()).apply { setMargins(0, 10.dp(), 0, 0) })
+        addText(card, "测试按钮会清除本次休息/提醒，并从当前时间重新计算连续亮屏。", 12f, false, textMuted, 8)
+
+        val scroller = ScrollView(context).apply { overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        scroller.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
+            setBackgroundColor(scrim)
+            addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
+        }
+    }
+
+    fun buildGlobalRestPrompt(
+        context: Context,
+        remainingMillis: Long,
+        onHome: () -> Unit,
+        onSkip: () -> Unit,
+    ): View {
+        fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
+        fun rounded(color: Int, radiusDp: Int): GradientDrawable =
+            GradientDrawable().apply { setColor(color); cornerRadius = radiusDp.dp().toFloat() }
+        fun addText(parent: LinearLayout, textValue: String, sizeSp: Float, bold: Boolean, color: Int, topDp: Int = 0) {
+            parent.addView(TextView(context).apply {
+                text = textValue
+                textSize = sizeSp
+                setTextColor(color)
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, topDp.dp(), 0, 2.dp())
+            })
+        }
+        fun button(textValue: String, bg: Int, fg: Int, onClick: () -> Unit) = TextView(context).apply {
+            text = textValue
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(fg)
+            background = rounded(bg, 18)
+            setPadding(10.dp(), 0, 10.dp(), 0)
+            setOnClickListener { onClick() }
+        }
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22.dp(), 20.dp(), 22.dp(), 20.dp())
+            background = rounded(Color.WHITE, 24)
+            elevation = 12f
+        }
+        addText(card, "时停 · 正在休息", 12f, true, primary)
+        addText(card, "还要休息 ${DemoBlockPrefs.compactDuration(remainingMillis)}", 26f, true, textStrong, 10)
+        addText(card, "现在打开应用会打断刚才设定的休息。先回到主界面，等休息结束再继续。", 15f, false, textBody, 6)
+        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 12.dp(), 0, 0) }
+        row.addView(button("回到主界面", primary, Color.WHITE) { onHome() }, LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { rightMargin = 6.dp() })
+        row.addView(button("跳过（测试）", primaryContainer, onPrimaryContainer, onSkip), LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { leftMargin = 6.dp() })
+        card.addView(row)
+        addText(card, "跳过仅用于测试，会立即结束本次休息。", 12f, false, textMuted, 8)
+
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
+            setBackgroundColor(scrim)
+        }
+        root.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        return root
+    }
+
     fun buildMini(context: Context, intentText: String, onTap: () -> Unit): TextView {
         fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
         return TextView(context).apply {

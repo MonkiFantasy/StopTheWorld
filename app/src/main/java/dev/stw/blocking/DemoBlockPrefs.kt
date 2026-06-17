@@ -24,7 +24,14 @@ object DemoBlockPrefs {
     private const val KEY_FLOATING_RUNNING = "floating_running"
     private const val KEY_DAY_BOUNDARY_MINUTES = "day_boundary_minutes"
     private const val KEY_PURPOSE_RECORDS = "purpose_records"
+    private const val KEY_GLOBAL_BREAK_ENABLED = "global_break_enabled"
+    private const val KEY_GLOBAL_BREAK_LIMIT_MINUTES = "global_break_limit_minutes"
+    private const val KEY_GLOBAL_BREAK_REST_OPTIONS = "global_break_rest_options"
+    private const val KEY_GLOBAL_SCREEN_ON_SINCE = "global_screen_on_since"
+    private const val KEY_GLOBAL_REST_UNTIL = "global_rest_until"
+    private const val KEY_GLOBAL_LAST_OVERLAY_AT = "global_last_overlay_at"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
+    private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
         val group = groups(context).firstOrNull() ?: RestrictedGroup(newGroupId(), "默认分组", emptyList())
@@ -210,6 +217,88 @@ object DemoBlockPrefs {
 
     fun isGroupOverLimit(context: Context, group: RestrictedGroup): Boolean =
         group.dailyLimitMinutes > 0 && groupUsageTodayMillis(context, group) >= group.dailyLimitMinutes * 60_000L
+
+    fun globalBreakSettings(context: Context): GlobalBreakSettings {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val options = prefs.getString(KEY_GLOBAL_BREAK_REST_OPTIONS, DEFAULT_REST_OPTIONS)
+            .orEmpty()
+            .split('|', ',', '，', '\n')
+            .mapNotNull { it.trim().toIntOrNull() }
+            .filter { it > 0 }
+            .distinct()
+            .take(6)
+            .ifEmpty { DEFAULT_REST_OPTIONS.split('|').map { it.toInt() } }
+        return GlobalBreakSettings(
+            enabled = prefs.getBoolean(KEY_GLOBAL_BREAK_ENABLED, false),
+            limitMinutes = prefs.getInt(KEY_GLOBAL_BREAK_LIMIT_MINUTES, 45).coerceAtLeast(1),
+            restOptionsMinutes = options,
+            screenOnSince = prefs.getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L),
+            restUntil = prefs.getLong(KEY_GLOBAL_REST_UNTIL, 0L),
+        )
+    }
+
+    fun setGlobalBreakConfig(context: Context, enabled: Boolean, limitMinutes: Int, restOptionsMinutes: List<Int>) {
+        val cleaned = restOptionsMinutes.filter { it > 0 }.distinct().take(6).ifEmpty { DEFAULT_REST_OPTIONS.split('|').map { it.toInt() } }
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_GLOBAL_BREAK_ENABLED, enabled)
+            .putInt(KEY_GLOBAL_BREAK_LIMIT_MINUTES, limitMinutes.coerceAtLeast(1))
+            .putString(KEY_GLOBAL_BREAK_REST_OPTIONS, cleaned.joinToString("|"))
+            .apply()
+    }
+
+    fun markScreenInteractive(context: Context, interactive: Boolean, now: Long = System.currentTimeMillis()): Long {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (!interactive) {
+            prefs.edit().putLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L).apply()
+            return 0L
+        }
+        val existing = prefs.getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L)
+        if (existing > 0L) return existing
+        prefs.edit().putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now).apply()
+        return now
+    }
+
+    fun globalScreenOnSince(context: Context): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L)
+
+    fun setGlobalRestUntil(context: Context, untilMillis: Long, now: Long = System.currentTimeMillis()) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_GLOBAL_REST_UNTIL, untilMillis)
+            .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
+            .putString(KEY_LAST_SKIP_REASON, "global_rest_until")
+            .apply()
+    }
+
+    fun clearGlobalRestForTest(context: Context, now: Long = System.currentTimeMillis()) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_GLOBAL_REST_UNTIL, 0L)
+            .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
+            .putString(KEY_LAST_SKIP_REASON, "global_rest_skipped_for_test")
+            .apply()
+    }
+
+    fun globalRestUntil(context: Context): Long =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_GLOBAL_REST_UNTIL, 0L)
+
+    fun finishGlobalRestIfExpired(context: Context, now: Long = System.currentTimeMillis()) {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val restUntil = prefs.getLong(KEY_GLOBAL_REST_UNTIL, 0L)
+        if (restUntil in 1..now) {
+            prefs.edit()
+                .putLong(KEY_GLOBAL_REST_UNTIL, 0L)
+                .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
+                .putString(KEY_LAST_SKIP_REASON, "global_rest_finished")
+                .apply()
+        }
+    }
+
+    fun canShowGlobalBreakOverlay(context: Context, atMillis: Long = System.currentTimeMillis(), cooldownMillis: Long = 2_000L): Boolean {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val lastAt = prefs.getLong(KEY_GLOBAL_LAST_OVERLAY_AT, 0L)
+        if (atMillis - lastAt in 0 until cooldownMillis) return false
+        prefs.edit().putLong(KEY_GLOBAL_LAST_OVERLAY_AT, atMillis).apply()
+        return true
+    }
 
     fun clearRestrictedApp(context: Context) {
         setGroups(context, emptyList())
@@ -518,6 +607,14 @@ object DemoBlockPrefs {
         )
     }
 }
+
+data class GlobalBreakSettings(
+    val enabled: Boolean,
+    val limitMinutes: Int,
+    val restOptionsMinutes: List<Int>,
+    val screenOnSince: Long,
+    val restUntil: Long,
+)
 
 data class PurposeRecord(
     val packageName: String,

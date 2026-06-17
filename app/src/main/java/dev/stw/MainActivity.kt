@@ -73,6 +73,7 @@ import dev.stw.blocking.AccessibilityStatus
 import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
 import dev.stw.blocking.FloatingReminderService
+import dev.stw.blocking.GlobalBreakSettings
 import dev.stw.blocking.RestrictedGroup
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
@@ -107,6 +108,7 @@ private data class HomeSnapshot(
     val ignoresBatteryOptimization: Boolean,
     val intentText: String,
     val dayBoundaryMinutes: Int,
+    val globalBreakSettings: GlobalBreakSettings,
 )
 
 class MainActivity : ComponentActivity() {
@@ -195,6 +197,7 @@ private fun DemoHome(
     var showDayBoundaryDialog by remember { mutableStateOf(false) }
     var dayBoundaryInput by remember { mutableStateOf(DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)) }
     var dayBoundaryError by remember { mutableStateOf<String?>(null) }
+    var globalBreakSettings by remember { mutableStateOf(DemoBlockPrefs.globalBreakSettings(context)) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -221,6 +224,7 @@ private fun DemoHome(
                 ignoresBatteryOptimization = isIgnoringBatteryOptimizations(context),
                 intentText = DemoBlockPrefs.intents(context).joinToString("，"),
                 dayBoundaryMinutes = DemoBlockPrefs.dayBoundaryMinutes(context),
+                globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -238,6 +242,7 @@ private fun DemoHome(
         ignoresBatteryOptimization = snapshot.ignoresBatteryOptimization
         intentText = snapshot.intentText
         dayBoundaryMinutes = snapshot.dayBoundaryMinutes
+        globalBreakSettings = snapshot.globalBreakSettings
         if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
@@ -369,6 +374,20 @@ private fun DemoHome(
                             dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)
                             dayBoundaryError = null
                             showDayBoundaryDialog = true
+                        },
+                    )
+                    GlobalScreenBreakCard(
+                        settings = globalBreakSettings,
+                        onSave = { enabled, limitMinutes, restOptions ->
+                            DemoBlockPrefs.setGlobalBreakConfig(context, enabled, limitMinutes, parsePositiveMinutes(restOptions))
+                            if (enabled) onStartFloatingMonitor()
+                            globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context)
+                            refreshTick++
+                        },
+                        onSkip = {
+                            DemoBlockPrefs.clearGlobalRestForTest(context)
+                            globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context)
+                            refreshTick++
                         },
                     )
                     IntentConfigCard(
@@ -592,6 +611,13 @@ private fun NavGlyph(kind: String, color: Color, modifier: Modifier = Modifier) 
     }
 }
 
+private fun parsePositiveMinutes(raw: String): List<Int> =
+    raw.split('，', ',', '|', '\n', ' ')
+        .mapNotNull { it.trim().toIntOrNull() }
+        .filter { it > 0 }
+        .distinct()
+        .take(6)
+
 private fun parseDayBoundaryInput(raw: String): Int? {
     val value = raw.trim()
     if (value.isBlank()) return null
@@ -666,6 +692,62 @@ private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
             labelColor = fg,
         ),
     )
+}
+
+@Composable
+private fun GlobalScreenBreakCard(
+    settings: GlobalBreakSettings,
+    onSave: (Boolean, Int, String) -> Unit,
+    onSkip: () -> Unit,
+) {
+    var enabled by remember(settings.enabled) { mutableStateOf(settings.enabled) }
+    var limitText by remember(settings.limitMinutes) { mutableStateOf(settings.limitMinutes.toString()) }
+    var restOptionsText by remember(settings.restOptionsMinutes) { mutableStateOf(settings.restOptionsMinutes.joinToString("，")) }
+    val now = System.currentTimeMillis()
+    val restRemaining = (settings.restUntil - now).coerceAtLeast(0L)
+    val screenOnElapsed = if (settings.screenOnSince > 0L) now - settings.screenOnSince else 0L
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("全局屏幕休息", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text("连续亮屏超过阈值后提醒休息；休息中再次打开应用会提示剩余时间。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+        val status = when {
+            !settings.enabled -> "未启用"
+            restRemaining > 0L -> "休息中 · 剩余 ${DemoBlockPrefs.compactDuration(restRemaining)}"
+            screenOnElapsed > 0L -> "连续亮屏 ${DemoBlockPrefs.compactDuration(screenOnElapsed)} / ${settings.limitMinutes} 分钟"
+            else -> "等待亮屏计时"
+        }
+        Text("状态：$status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(
+            value = limitText,
+            onValueChange = { limitText = it.filter { ch -> ch.isDigit() }.take(4) },
+            label = { Text("连续亮屏多久提醒（分钟）", style = MaterialTheme.typography.labelSmall) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = restOptionsText,
+            onValueChange = { restOptionsText = it },
+            label = { Text("休息选项（分钟，用逗号分隔）", style = MaterialTheme.typography.labelSmall) },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Button(
+                onClick = { onSave(enabled, limitText.toIntOrNull()?.coerceAtLeast(1) ?: settings.limitMinutes, restOptionsText) },
+                modifier = Modifier.weight(1f),
+            ) { Text("保存休息设置", style = MaterialTheme.typography.labelMedium) }
+            OutlinedButton(onClick = onSkip, modifier = Modifier.weight(1f)) {
+                Text("跳过/重置测试", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        Text("建议同时开启悬浮窗和极速监控；无障碍事件也会在打开应用时补充提示。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 @Composable

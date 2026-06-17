@@ -3,6 +3,7 @@ package dev.stw.blocking
 import android.accessibilityservice.AccessibilityService
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -54,6 +55,14 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             lastSeenWriteAt = now
             DemoBlockPrefs.markSeen(this, seenPackage, now)
         }
+
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (!powerManager.isInteractive) {
+            DemoBlockPrefs.markScreenInteractive(this, false, now)
+            return
+        }
+        DemoBlockPrefs.markScreenInteractive(this, true, now)
+        if (checkGlobalBreak(seenPackage, now)) return
 
         val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
         val restricted = eventPackage?.takeIf { it in restrictedPackages } ?: activePackage?.takeIf { it in restrictedPackages } ?: return
@@ -110,6 +119,28 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return
         }
         attemptBlock(packageName, "accessibility_verified")
+    }
+
+    private fun checkGlobalBreak(packageName: String, now: Long): Boolean {
+        DemoBlockPrefs.finishGlobalRestIfExpired(this, now)
+        val settings = DemoBlockPrefs.globalBreakSettings(this)
+        if (!settings.enabled || packageName.isIgnoredGlobalPackage()) return false
+        val restUntil = settings.restUntil
+        if (restUntil > now) {
+            if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
+            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            showGlobalRestOverlay(restUntil - now)
+            return true
+        }
+        val since = settings.screenOnSince.takeIf { it > 0L } ?: DemoBlockPrefs.markScreenInteractive(this, true, now)
+        val elapsed = now - since
+        if (elapsed >= settings.limitMinutes * 60_000L) {
+            if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
+            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            showGlobalBreakPrompt(elapsed, settings.restOptionsMinutes)
+            return true
+        }
+        return false
     }
 
     private fun attemptBlock(packageName: String, source: String) {
@@ -180,6 +211,59 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun showGlobalBreakPrompt(screenOnMillis: Long, restOptionsMinutes: List<Int>) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = GLOBAL_BREAK_PACKAGE
+        val view = BlockOverlayUi.buildGlobalBreakPrompt(
+            context = this,
+            screenOnMillis = screenOnMillis,
+            restOptionsMinutes = restOptionsMinutes,
+            onRest = { minutes ->
+                val now = System.currentTimeMillis()
+                DemoBlockPrefs.setGlobalRestUntil(this, now + minutes * 60_000L, now)
+                hideOverlay()
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            },
+            onSkip = {
+                DemoBlockPrefs.clearGlobalRestForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching { windowManager?.addView(view, fullParams()) }
+            .onFailure { error ->
+                overlayView = null
+                overlayPackage = null
+                DemoBlockPrefs.markSkip(this, "accessibility_global_break_overlay_error:${error.javaClass.simpleName}")
+            }
+    }
+
+    private fun showGlobalRestOverlay(remainingMillis: Long) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = GLOBAL_BREAK_PACKAGE
+        val view = BlockOverlayUi.buildGlobalRestPrompt(
+            context = this,
+            remainingMillis = remainingMillis,
+            onHome = {
+                hideOverlay()
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            },
+            onSkip = {
+                DemoBlockPrefs.clearGlobalRestForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching { windowManager?.addView(view, fullParams()) }
+            .onFailure { error ->
+                overlayView = null
+                overlayPackage = null
+                DemoBlockPrefs.markSkip(this, "accessibility_global_rest_overlay_error:${error.javaClass.simpleName}")
+            }
+    }
+
     private fun showMini(intentText: String) {
         hideMini()
         val mini = BlockOverlayUi.buildMini(this, intentText) { hideMini() }
@@ -225,7 +309,15 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private fun String.isSystemTransientPackage(): Boolean =
         this == "com.android.systemui" ||
             this.contains("launcher", ignoreCase = true) ||
-            this.contains("inputmethod", ignoreCase = true)
+            this.contains("inputmethod", ignoreCase = true) ||
+            this.contains("home", ignoreCase = true)
+
+    private fun String.isIgnoredGlobalPackage(): Boolean =
+        this == applicationContext.packageName || isSystemTransientPackage()
 
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
+
+    companion object {
+        private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
+    }
 }
