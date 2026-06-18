@@ -135,7 +135,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val restUntil = settings.restUntil
         if (restUntil > now) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
-            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, GLOBAL_OVERLAY_OWNER, now)) return true
             showGlobalRestOverlay(restUntil - now)
             return true
         }
@@ -143,7 +143,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val elapsed = now - since
         if (elapsed >= settings.limitMinutes * 60_000L) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
-            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, GLOBAL_OVERLAY_OWNER, now)) return true
             showGlobalBreakPrompt(elapsed, settings.restOptionsMinutes)
             return true
         }
@@ -242,6 +242,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             .onFailure { error ->
                 overlayView = null
                 overlayPackage = null
+                DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
                 DemoBlockPrefs.markSkip(this, "accessibility_global_break_overlay_error:${error.javaClass.simpleName}")
             }
     }
@@ -268,6 +269,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             .onFailure { error ->
                 overlayView = null
                 overlayPackage = null
+                DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
                 DemoBlockPrefs.markSkip(this, "accessibility_global_rest_overlay_error:${error.javaClass.simpleName}")
             }
     }
@@ -292,6 +294,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     }
 
     private fun hideOverlay() {
+        val hiddenPackage = overlayPackage
         pendingCheck?.let { handler.removeCallbacks(it) }
         pendingCheck = null
         countdownRunnable?.let { handler.removeCallbacks(it) }
@@ -299,6 +302,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         overlayView?.let { runCatching { windowManager?.removeView(it) } }
         overlayView = null
         overlayPackage = null
+        if (hiddenPackage == GLOBAL_BREAK_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
     }
 
     private fun hideMini() {
@@ -337,5 +341,6 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
+        private const val GLOBAL_OVERLAY_OWNER = "accessibility"
     }
 }

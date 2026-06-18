@@ -125,7 +125,7 @@ class FloatingReminderService : Service() {
         val restUntil = settings.restUntil
         if (restUntil > now) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
-            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, GLOBAL_OVERLAY_OWNER, now)) return true
             showGlobalRestOverlay(restUntil - now)
             return true
         }
@@ -133,7 +133,7 @@ class FloatingReminderService : Service() {
         val elapsed = now - since
         if (elapsed >= settings.limitMinutes * 60_000L) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
-            if (!DemoBlockPrefs.canShowGlobalBreakOverlay(this, now)) return true
+            if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, GLOBAL_OVERLAY_OWNER, now)) return true
             showGlobalBreakPrompt(elapsed, settings.restOptionsMinutes)
             return true
         }
@@ -234,6 +234,7 @@ class FloatingReminderService : Service() {
             .onFailure { error ->
                 overlayView = null
                 overlayPackage = null
+                DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
                 DemoBlockPrefs.markSkip(this, "global_break_overlay_error:${error.javaClass.simpleName}")
             }
     }
@@ -260,6 +261,7 @@ class FloatingReminderService : Service() {
             .onFailure { error ->
                 overlayView = null
                 overlayPackage = null
+                DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
                 DemoBlockPrefs.markSkip(this, "global_rest_overlay_error:${error.javaClass.simpleName}")
             }
     }
@@ -289,11 +291,13 @@ class FloatingReminderService : Service() {
     }
 
     private fun hideOverlay() {
+        val hiddenPackage = overlayPackage
         countdownRunnable?.let { handler.removeCallbacks(it) }
         countdownRunnable = null
         overlayView?.let { runCatching { windowManager?.removeView(it) } }
         overlayView = null
         overlayPackage = null
+        if (hiddenPackage == GLOBAL_BREAK_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
     }
 
     private fun hideMini() {
@@ -343,6 +347,7 @@ class FloatingReminderService : Service() {
 
     companion object {
         private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
+        private const val GLOBAL_OVERLAY_OWNER = "floating"
         private const val POLL_MS = 250L
         private const val NOTIFICATION_ID = 4301
         const val ACTION_STOP = "dev.stw.blocking.STOP_FLOATING_REMINDER"

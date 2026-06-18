@@ -33,6 +33,7 @@ object DemoBlockPrefs {
     private const val KEY_GLOBAL_LAST_OVERLAY_AT = "global_last_overlay_at"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
     private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
+    private var activeGlobalOverlayOwner: String? = null
 
     fun setRestrictedApp(context: Context, packageName: String, label: String) {
         val group = groups(context).firstOrNull() ?: RestrictedGroup(newGroupId(), "默认分组", emptyList())
@@ -304,12 +305,34 @@ object DemoBlockPrefs {
         }
     }
 
-    fun canShowGlobalBreakOverlay(context: Context, atMillis: Long = System.currentTimeMillis(), cooldownMillis: Long = 2_000L): Boolean {
+    @Synchronized
+    fun acquireGlobalBreakOverlay(
+        context: Context,
+        owner: String,
+        atMillis: Long = System.currentTimeMillis(),
+        cooldownMillis: Long = 2_000L,
+    ): Boolean {
+        val activeOwner = activeGlobalOverlayOwner
+        if (activeOwner != null && activeOwner != owner) {
+            context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+                .putString(KEY_LAST_SKIP_REASON, "global_overlay_active:$activeOwner")
+                .apply()
+            return false
+        }
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         val lastAt = prefs.getLong(KEY_GLOBAL_LAST_OVERLAY_AT, 0L)
-        if (atMillis - lastAt in 0 until cooldownMillis) return false
+        if (activeOwner == null && atMillis - lastAt in 0 until cooldownMillis) {
+            prefs.edit().putString(KEY_LAST_SKIP_REASON, "global_overlay_cooldown").apply()
+            return false
+        }
+        activeGlobalOverlayOwner = owner
         prefs.edit().putLong(KEY_GLOBAL_LAST_OVERLAY_AT, atMillis).apply()
         return true
+    }
+
+    @Synchronized
+    fun releaseGlobalBreakOverlay(owner: String) {
+        if (activeGlobalOverlayOwner == owner) activeGlobalOverlayOwner = null
     }
 
     fun clearRestrictedApp(context: Context) {
