@@ -31,6 +31,12 @@ object DemoBlockPrefs {
     private const val KEY_GLOBAL_REST_UNTIL = "global_rest_until"
     private const val KEY_GLOBAL_REST_ACTIVITY = "global_rest_activity"
     private const val KEY_GLOBAL_LAST_OVERLAY_AT = "global_last_overlay_at"
+    private const val KEY_LATE_NIGHT_ENABLED = "late_night_enabled"
+    private const val KEY_LATE_NIGHT_THRESHOLD_MINUTES = "late_night_threshold_minutes"
+    private const val KEY_LATE_NIGHT_WAKE_MINUTES = "late_night_wake_minutes"
+    private const val KEY_LATE_NIGHT_HANDLED_WINDOW_START = "late_night_handled_window_start"
+    private const val KEY_LATE_NIGHT_LAST_PROMPT_AT = "late_night_last_prompt_at"
+    private const val KEY_LATE_NIGHT_RECORDS = "late_night_records"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
     private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
     private var activeGlobalOverlayOwner: String? = null
@@ -334,6 +340,158 @@ object DemoBlockPrefs {
     fun releaseGlobalBreakOverlay(owner: String) {
         if (activeGlobalOverlayOwner == owner) activeGlobalOverlayOwner = null
     }
+
+    fun lateNightSettings(context: Context): LateNightSettings {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        return LateNightSettings(
+            enabled = prefs.getBoolean(KEY_LATE_NIGHT_ENABLED, false),
+            thresholdMinutes = prefs.getInt(KEY_LATE_NIGHT_THRESHOLD_MINUTES, 23 * 60).coerceIn(0, 1439),
+            wakeMinutes = prefs.getInt(KEY_LATE_NIGHT_WAKE_MINUTES, 7 * 60).coerceIn(0, 1439),
+            handledWindowStartMillis = prefs.getLong(KEY_LATE_NIGHT_HANDLED_WINDOW_START, 0L),
+            records = lateNightRecords(context),
+        )
+    }
+
+    fun setLateNightConfig(context: Context, enabled: Boolean, thresholdMinutes: Int, wakeMinutes: Int) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_LATE_NIGHT_ENABLED, enabled)
+            .putInt(KEY_LATE_NIGHT_THRESHOLD_MINUTES, thresholdMinutes.coerceIn(0, 1439))
+            .putInt(KEY_LATE_NIGHT_WAKE_MINUTES, wakeMinutes.coerceIn(0, 1439))
+            .putString(KEY_LAST_SKIP_REASON, if (enabled) "late_night_enabled" else "late_night_disabled")
+            .apply()
+    }
+
+    fun currentLateNightWindow(context: Context, now: Long = System.currentTimeMillis()): LateNightWindow? {
+        val settings = lateNightSettings(context)
+        return currentLateNightWindow(settings.thresholdMinutes, settings.wakeMinutes, now)
+    }
+
+    fun shouldShowLateNightPrompt(context: Context, now: Long = System.currentTimeMillis()): LateNightWindow? {
+        val settings = lateNightSettings(context)
+        if (!settings.enabled) return null
+        if (globalRestUntil(context) > now) return null
+        val window = currentLateNightWindow(settings.thresholdMinutes, settings.wakeMinutes, now) ?: return null
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        if (prefs.getLong(KEY_LATE_NIGHT_HANDLED_WINDOW_START, 0L) == window.startMillis) return null
+        val lastPromptAt = prefs.getLong(KEY_LATE_NIGHT_LAST_PROMPT_AT, 0L)
+        if (now - lastPromptAt in 0 until 5_000L) return null
+        return window
+    }
+
+    fun markLateNightPromptShown(context: Context, atMillis: Long = System.currentTimeMillis(), source: String) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_LATE_NIGHT_LAST_PROMPT_AT, atMillis)
+            .putString(KEY_LAST_SKIP_REASON, source)
+            .apply()
+    }
+
+    fun recordLateNightImportantTask(
+        context: Context,
+        task: String,
+        window: LateNightWindow,
+        atMillis: Long = System.currentTimeMillis(),
+    ) {
+        val cleaned = task.trim().take(120)
+        if (cleaned.isBlank()) return
+        val updated = (lateNightRecords(context) + LateNightRecord(cleaned, atMillis, window.startMillis, window.wakeMillis))
+            .sortedByDescending { it.createdMillis }
+            .take(120)
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_LATE_NIGHT_RECORDS, encodeLateNightRecords(updated))
+            .putLong(KEY_LATE_NIGHT_HANDLED_WINDOW_START, window.startMillis)
+            .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, atMillis)
+            .putString(KEY_LAST_SKIP_REASON, "late_night_important_recorded")
+            .apply()
+    }
+
+    fun startLateNightSleep(context: Context, window: LateNightWindow, now: Long = System.currentTimeMillis()) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_LATE_NIGHT_HANDLED_WINDOW_START, window.startMillis)
+            .apply()
+        setGlobalRestUntil(context, window.wakeMillis, now, "睡觉到 ${formatClockMinutes(lateNightSettings(context).wakeMinutes)}")
+    }
+
+    fun snoozeLateNightPromptForTest(context: Context, now: Long = System.currentTimeMillis()) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_LATE_NIGHT_LAST_PROMPT_AT, now)
+            .putString(KEY_LAST_SKIP_REASON, "late_night_snoozed_for_test")
+            .apply()
+    }
+
+    fun formatClockMinutes(minutes: Int): String = "%02d:%02d".format((minutes.coerceIn(0, 1439) / 60), (minutes.coerceIn(0, 1439) % 60))
+
+    private fun currentLateNightWindow(thresholdMinutes: Int, wakeMinutes: Int, now: Long): LateNightWindow? {
+        if (thresholdMinutes == wakeMinutes) return null
+        val current = Calendar.getInstance().apply { timeInMillis = now }
+        val nowMinutes = current.get(Calendar.HOUR_OF_DAY) * 60 + current.get(Calendar.MINUTE)
+
+        fun clockOnDay(base: Calendar, minutes: Int): Long {
+            val cal = base.clone() as Calendar
+            cal.set(Calendar.HOUR_OF_DAY, minutes / 60)
+            cal.set(Calendar.MINUTE, minutes % 60)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            return cal.timeInMillis
+        }
+
+        return if (thresholdMinutes > wakeMinutes) {
+            when {
+                nowMinutes >= thresholdMinutes -> {
+                    val start = clockOnDay(current, thresholdMinutes)
+                    val wake = (current.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }.let { clockOnDay(it, wakeMinutes) }
+                    LateNightWindow(start, wake)
+                }
+                nowMinutes < wakeMinutes -> {
+                    val start = (current.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -1) }.let { clockOnDay(it, thresholdMinutes) }
+                    val wake = clockOnDay(current, wakeMinutes)
+                    LateNightWindow(start, wake)
+                }
+                else -> null
+            }
+        } else {
+            if (nowMinutes in thresholdMinutes until wakeMinutes) {
+                LateNightWindow(clockOnDay(current, thresholdMinutes), clockOnDay(current, wakeMinutes))
+            } else {
+                null
+            }
+        }
+    }
+
+    private fun lateNightRecords(context: Context): List<LateNightRecord> {
+        val raw = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_LATE_NIGHT_RECORDS, null) ?: return emptyList()
+        return parseLateNightRecords(raw)
+    }
+
+    private fun parseLateNightRecords(raw: String): List<LateNightRecord> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val task = obj.optString("task")
+                if (task.isNotBlank()) {
+                    add(
+                        LateNightRecord(
+                            task = task,
+                            createdMillis = obj.optLong("createdMillis", 0L),
+                            windowStartMillis = obj.optLong("windowStartMillis", 0L),
+                            wakeMillis = obj.optLong("wakeMillis", 0L),
+                        ),
+                    )
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodeLateNightRecords(records: List<LateNightRecord>): String = JSONArray().apply {
+        records.forEach { record ->
+            put(JSONObject().apply {
+                put("task", record.task)
+                put("createdMillis", record.createdMillis)
+                put("windowStartMillis", record.windowStartMillis)
+                put("wakeMillis", record.wakeMillis)
+            })
+        }
+    }.toString()
 
     fun clearRestrictedApp(context: Context) {
         setGroups(context, emptyList())
@@ -650,6 +808,26 @@ data class GlobalBreakSettings(
     val screenOnSince: Long,
     val restUntil: Long,
     val restActivity: String?,
+)
+
+data class LateNightSettings(
+    val enabled: Boolean,
+    val thresholdMinutes: Int,
+    val wakeMinutes: Int,
+    val handledWindowStartMillis: Long,
+    val records: List<LateNightRecord>,
+)
+
+data class LateNightWindow(
+    val startMillis: Long,
+    val wakeMillis: Long,
+)
+
+data class LateNightRecord(
+    val task: String,
+    val createdMillis: Long,
+    val windowStartMillis: Long,
+    val wakeMillis: Long,
 )
 
 data class PurposeRecord(

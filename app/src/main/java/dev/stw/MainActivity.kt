@@ -74,6 +74,7 @@ import dev.stw.blocking.DemoBlockPrefs
 import dev.stw.blocking.DemoDebugState
 import dev.stw.blocking.FloatingReminderService
 import dev.stw.blocking.GlobalBreakSettings
+import dev.stw.blocking.LateNightSettings
 import dev.stw.blocking.RestrictedGroup
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
@@ -109,6 +110,7 @@ private data class HomeSnapshot(
     val intentText: String,
     val dayBoundaryMinutes: Int,
     val globalBreakSettings: GlobalBreakSettings,
+    val lateNightSettings: LateNightSettings,
 )
 
 class MainActivity : ComponentActivity() {
@@ -198,6 +200,7 @@ private fun DemoHome(
     var dayBoundaryInput by remember { mutableStateOf(DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)) }
     var dayBoundaryError by remember { mutableStateOf<String?>(null) }
     var globalBreakSettings by remember { mutableStateOf(DemoBlockPrefs.globalBreakSettings(context)) }
+    var lateNightSettings by remember { mutableStateOf(DemoBlockPrefs.lateNightSettings(context)) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -225,6 +228,7 @@ private fun DemoHome(
                 intentText = DemoBlockPrefs.intents(context).joinToString("，"),
                 dayBoundaryMinutes = DemoBlockPrefs.dayBoundaryMinutes(context),
                 globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context),
+                lateNightSettings = DemoBlockPrefs.lateNightSettings(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -243,6 +247,7 @@ private fun DemoHome(
         intentText = snapshot.intentText
         dayBoundaryMinutes = snapshot.dayBoundaryMinutes
         globalBreakSettings = snapshot.globalBreakSettings
+        lateNightSettings = snapshot.lateNightSettings
         if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
@@ -387,6 +392,15 @@ private fun DemoHome(
                         onSkip = {
                             DemoBlockPrefs.clearGlobalRestForTest(context)
                             globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context)
+                            refreshTick++
+                        },
+                    )
+                    LateNightReminderCard(
+                        settings = lateNightSettings,
+                        onSave = { enabled, thresholdMinutes, wakeMinutes ->
+                            DemoBlockPrefs.setLateNightConfig(context, enabled, thresholdMinutes, wakeMinutes)
+                            if (enabled) onStartFloatingMonitor()
+                            lateNightSettings = DemoBlockPrefs.lateNightSettings(context)
                             refreshTick++
                         },
                     )
@@ -618,7 +632,7 @@ private fun parsePositiveMinutes(raw: String): List<Int> =
         .distinct()
         .take(6)
 
-private fun parseDayBoundaryInput(raw: String): Int? {
+private fun parseClockInput(raw: String): Int? {
     val value = raw.trim()
     if (value.isBlank()) return null
     if (":" !in value) {
@@ -629,6 +643,10 @@ private fun parseDayBoundaryInput(raw: String): Int? {
     val hour = parts.getOrNull(0)?.trim()?.toIntOrNull() ?: return null
     val minute = parts.getOrNull(1)?.trim()?.toIntOrNull() ?: return null
     return if (hour in 0..23 && minute in 0..59) hour * 60 + minute else null
+}
+
+private fun parseDayBoundaryInput(raw: String): Int? {
+    return parseClockInput(raw)
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -747,6 +765,94 @@ private fun GlobalScreenBreakCard(
             }
         }
         Text("建议同时开启悬浮窗和极速监控；无障碍事件也会在打开应用时补充提示。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun LateNightReminderCard(
+    settings: LateNightSettings,
+    onSave: (Boolean, Int, Int) -> Unit,
+) {
+    val context = LocalContext.current
+    var enabled by remember(settings.enabled) { mutableStateOf(settings.enabled) }
+    var thresholdText by remember(settings.thresholdMinutes) { mutableStateOf(DemoBlockPrefs.formatClockMinutes(settings.thresholdMinutes)) }
+    var wakeText by remember(settings.wakeMinutes) { mutableStateOf(DemoBlockPrefs.formatClockMinutes(settings.wakeMinutes)) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val now = System.currentTimeMillis()
+    val window = DemoBlockPrefs.currentLateNightWindow(context, now)
+    val restUntil = DemoBlockPrefs.globalRestUntil(context)
+    val status = when {
+        !settings.enabled -> "未启用"
+        restUntil > now -> "休息中 · 直到 ${DemoBlockPrefs.formatClockMinutes(settings.wakeMinutes)}"
+        settings.thresholdMinutes == settings.wakeMinutes -> "阈值和起床时间不能相同"
+        window != null && settings.handledWindowStartMillis == window.startMillis -> "今晚已处理 · ${settings.records.firstOrNull { it.windowStartMillis == window.startMillis }?.task ?: "已进入休息"}"
+        window != null -> "当前处于熬夜窗口 · 等待确认是否真的重要"
+        else -> "将在 ${DemoBlockPrefs.formatClockMinutes(settings.thresholdMinutes)} 后提醒"
+    }
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("熬夜提醒", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text("到达熬夜阈值后询问是否真的有重要事情；没有就休息到起床时间。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+        Text("状态：$status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = thresholdText,
+                onValueChange = {
+                    thresholdText = it.take(5)
+                    error = null
+                },
+                label = { Text("熬夜阈值", style = MaterialTheme.typography.labelSmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = wakeText,
+                onValueChange = {
+                    wakeText = it.take(5)
+                    error = null
+                },
+                label = { Text("起床时间", style = MaterialTheme.typography.labelSmall) },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        }
+        Button(
+            onClick = {
+                val threshold = parseClockInput(thresholdText)
+                val wake = parseClockInput(wakeText)
+                when {
+                    threshold == null || wake == null -> error = "请输入 0-23 或 HH:mm，例如 23:30、7:00"
+                    threshold == wake -> error = "熬夜阈值和起床时间不能相同"
+                    else -> {
+                        error = null
+                        thresholdText = DemoBlockPrefs.formatClockMinutes(threshold)
+                        wakeText = DemoBlockPrefs.formatClockMinutes(wake)
+                        onSave(enabled, threshold, wake)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("保存熬夜提醒", style = MaterialTheme.typography.labelMedium) }
+        if (settings.records.isNotEmpty()) {
+            HorizontalDivider()
+            Text("近期记录", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            settings.records.take(3).forEach { record ->
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(record.task, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${formatTime(record.createdMillis)} 记录 · 原计划睡到 ${formatTime(record.wakeMillis)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Text("提醒依赖无障碍事件或兜底监控；保存启用后会自动启动兜底监控。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

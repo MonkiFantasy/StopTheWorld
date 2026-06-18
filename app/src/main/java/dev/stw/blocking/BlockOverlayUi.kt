@@ -487,6 +487,94 @@ object BlockOverlayUi {
         return root
     }
 
+    fun buildLateNightPrompt(
+        context: Context,
+        thresholdText: String,
+        wakeText: String,
+        onImportant: (String) -> Unit,
+        onSleep: () -> Unit,
+        onSnoozeForTest: () -> Unit,
+    ): View {
+        fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
+        fun rounded(color: Int, radiusDp: Int): GradientDrawable =
+            GradientDrawable().apply { setColor(color); cornerRadius = radiusDp.dp().toFloat() }
+        fun addText(parent: LinearLayout, textValue: String, sizeSp: Float, bold: Boolean, color: Int, topDp: Int = 0): TextView {
+            val view = TextView(context).apply {
+                text = textValue
+                textSize = sizeSp
+                setTextColor(color)
+                if (bold) setTypeface(typeface, Typeface.BOLD)
+                setPadding(0, topDp.dp(), 0, 2.dp())
+            }
+            parent.addView(view)
+            return view
+        }
+        fun button(textValue: String, bg: Int, fg: Int, onClick: () -> Unit) = TextView(context).apply {
+            text = textValue
+            gravity = Gravity.CENTER
+            textSize = 14f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(fg)
+            background = rounded(bg, 18)
+            setPadding(10.dp(), 0, 10.dp(), 0)
+            setOnClickListener { if (isEnabled) onClick() }
+        }
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22.dp(), 20.dp(), 22.dp(), 20.dp())
+            background = rounded(Color.WHITE, 24)
+            elevation = 12f
+        }
+        addText(card, "时停 · 熬夜提醒", 12f, true, primary)
+        addText(card, "已经到 $thresholdText 了", 29f, true, textStrong, 10)
+        addText(card, "现在继续看手机，是真的有重要的事要做吗？", 17f, true, textBody, 6)
+        addText(card, "如果确实重要，先把事情写清楚，时停会把它计入熬夜记录；如果没有，就进入休息直到 $wakeText。", 14f, false, textMuted, 6)
+
+        val taskInput = EditText(context).apply {
+            hint = "写下重要的事：例如 提交作业 / 联系家人 / 处理紧急工作"
+            textSize = 14f
+            setSingleLine(false)
+            minLines = 3
+            setPadding(12.dp(), 9.dp(), 12.dp(), 9.dp())
+            background = rounded(fieldBg, 16)
+        }
+        card.addView(taskInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(0, 12.dp(), 0, 0) })
+        val errorText = addText(card, "", 12f, false, danger, 4)
+
+        val important = button("确实重要，记录并继续", primary, Color.WHITE) {
+            val task = taskInput.text?.toString()?.trim().orEmpty()
+            if (task.isBlank()) {
+                errorText.text = "先写下具体要做什么，再继续。"
+                taskInput.requestFocus()
+            } else {
+                onImportant(task)
+            }
+        }
+        card.addView(important, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 48.dp()).apply { setMargins(0, 8.dp(), 0, 0) })
+
+        val sleep = button("没有重要事，休息到 $wakeText", primaryContainer, onPrimaryContainer, onSleep)
+        card.addView(sleep, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 48.dp()).apply { setMargins(0, 8.dp(), 0, 0) })
+
+        val snooze = button("测试稍后提醒（5秒）", fieldBg, textMuted, onSnoozeForTest).apply {
+            visibility = View.GONE
+            alpha = 0.7f
+        }
+        card.addView(snooze, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 40.dp()).apply { setMargins(0, 10.dp(), 0, 0) })
+        addText(card, "“重要”会被记录在 App 内；“没有”会进入休息锁定，直到设定起床时间。", 12f, false, textMuted, 8)
+        Handler(context.mainLooper).postDelayed({ snooze.visibility = View.VISIBLE }, 2_500L)
+
+        val scroller = ScrollView(context).apply { overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
+        scroller.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(20.dp(), 20.dp(), 20.dp(), 20.dp())
+            setBackgroundColor(scrim)
+            addView(scroller, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT))
+        }
+    }
+
     fun buildMini(context: Context, intentText: String, onTap: () -> Unit): TextView {
         fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
         return TextView(context).apply {

@@ -68,6 +68,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return
         }
         DemoBlockPrefs.markScreenInteractive(this, true, now)
+        if (checkLateNight(seenPackage, now)) return
         if (checkGlobalBreak(seenPackage, now)) return
 
         val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
@@ -131,7 +132,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private fun checkGlobalBreak(packageName: String, now: Long): Boolean {
         DemoBlockPrefs.finishGlobalRestIfExpired(this, now)
         val settings = DemoBlockPrefs.globalBreakSettings(this)
-        if (!settings.enabled || packageName.isIgnoredGlobalPackage()) return false
+        if (packageName.isIgnoredGlobalPackage()) return false
         val restUntil = settings.restUntil
         if (restUntil > now) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
@@ -139,6 +140,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             showGlobalRestOverlay(restUntil - now)
             return true
         }
+        if (!settings.enabled) return false
         val since = settings.screenOnSince.takeIf { it > 0L } ?: DemoBlockPrefs.markScreenInteractive(this, true, now)
         val elapsed = now - since
         if (elapsed >= settings.limitMinutes * 60_000L) {
@@ -148,6 +150,15 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return true
         }
         return false
+    }
+
+    private fun checkLateNight(packageName: String, now: Long): Boolean {
+        if (packageName.isIgnoredGlobalPackage()) return false
+        if (overlayView != null && overlayPackage == LATE_NIGHT_PACKAGE) return true
+        val window = DemoBlockPrefs.shouldShowLateNightPrompt(this, now) ?: return false
+        if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, LATE_NIGHT_OVERLAY_OWNER, now)) return true
+        showLateNightPrompt(window)
+        return true
     }
 
     private fun attemptBlock(packageName: String, source: String) {
@@ -215,6 +226,42 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             overlayView = null
             overlayPackage = null
             DemoBlockPrefs.markSkip(this, "accessibility_overlay_error:${error.javaClass.simpleName}")
+        }
+    }
+
+    private fun showLateNightPrompt(window: LateNightWindow) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = LATE_NIGHT_PACKAGE
+        val settings = DemoBlockPrefs.lateNightSettings(this)
+        val view = BlockOverlayUi.buildLateNightPrompt(
+            context = this,
+            thresholdText = DemoBlockPrefs.formatClockMinutes(settings.thresholdMinutes),
+            wakeText = DemoBlockPrefs.formatClockMinutes(settings.wakeMinutes),
+            onImportant = { task ->
+                DemoBlockPrefs.recordLateNightImportantTask(this, task, window)
+                hideOverlay()
+                showMini("今晚重要：$task")
+            },
+            onSleep = {
+                DemoBlockPrefs.startLateNightSleep(this, window)
+                hideOverlay()
+                performGlobalAction(GLOBAL_ACTION_HOME)
+            },
+            onSnoozeForTest = {
+                DemoBlockPrefs.snoozeLateNightPromptForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching {
+            windowManager?.addView(view, fullParams())
+            DemoBlockPrefs.markLateNightPromptShown(this, System.currentTimeMillis(), "accessibility_late_night_prompt")
+        }.onFailure { error ->
+            overlayView = null
+            overlayPackage = null
+            DemoBlockPrefs.releaseGlobalBreakOverlay(LATE_NIGHT_OVERLAY_OWNER)
+            DemoBlockPrefs.markSkip(this, "accessibility_late_night_overlay_error:${error.javaClass.simpleName}")
         }
     }
 
@@ -303,6 +350,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         overlayView = null
         overlayPackage = null
         if (hiddenPackage == GLOBAL_BREAK_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
+        if (hiddenPackage == LATE_NIGHT_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(LATE_NIGHT_OVERLAY_OWNER)
     }
 
     private fun hideMini() {
@@ -342,5 +390,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     companion object {
         private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
         private const val GLOBAL_OVERLAY_OWNER = "accessibility"
+        private const val LATE_NIGHT_PACKAGE = "__late_night_prompt__"
+        private const val LATE_NIGHT_OVERLAY_OWNER = "accessibility_late_night"
     }
 }

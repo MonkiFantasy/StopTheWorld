@@ -101,6 +101,7 @@ class FloatingReminderService : Service() {
             lastForegroundPackage = fg
             DemoBlockPrefs.markSeen(this, fg)
         }
+        if (checkLateNight(fg, now)) return
         if (checkGlobalBreak(fg, now)) return
 
         val restrictedPackages = DemoBlockPrefs.restrictedPackages(this)
@@ -121,7 +122,7 @@ class FloatingReminderService : Service() {
     private fun checkGlobalBreak(fg: String, now: Long): Boolean {
         DemoBlockPrefs.finishGlobalRestIfExpired(this, now)
         val settings = DemoBlockPrefs.globalBreakSettings(this)
-        if (!settings.enabled || fg.isIgnoredGlobalPackage()) return false
+        if (fg.isIgnoredGlobalPackage()) return false
         val restUntil = settings.restUntil
         if (restUntil > now) {
             if (overlayView != null && overlayPackage == GLOBAL_BREAK_PACKAGE) return true
@@ -129,6 +130,7 @@ class FloatingReminderService : Service() {
             showGlobalRestOverlay(restUntil - now)
             return true
         }
+        if (!settings.enabled) return false
         val since = settings.screenOnSince.takeIf { it > 0L } ?: DemoBlockPrefs.markScreenInteractive(this, true, now)
         val elapsed = now - since
         if (elapsed >= settings.limitMinutes * 60_000L) {
@@ -138,6 +140,15 @@ class FloatingReminderService : Service() {
             return true
         }
         return false
+    }
+
+    private fun checkLateNight(fg: String, now: Long): Boolean {
+        if (fg.isIgnoredGlobalPackage()) return false
+        if (overlayView != null && overlayPackage == LATE_NIGHT_PACKAGE) return true
+        val window = DemoBlockPrefs.shouldShowLateNightPrompt(this, now) ?: return false
+        if (!DemoBlockPrefs.acquireGlobalBreakOverlay(this, LATE_NIGHT_OVERLAY_OWNER, now)) return true
+        showLateNightPrompt(window)
+        return true
     }
 
     private fun latestForegroundPackage(): String? = runCatching {
@@ -207,6 +218,42 @@ class FloatingReminderService : Service() {
             overlayView = null
             overlayPackage = null
             DemoBlockPrefs.markSkip(this, "float_overlay_error:${it.javaClass.simpleName}")
+        }
+    }
+
+    private fun showLateNightPrompt(window: LateNightWindow) {
+        hideOverlay()
+        hideMini()
+        overlayPackage = LATE_NIGHT_PACKAGE
+        val settings = DemoBlockPrefs.lateNightSettings(this)
+        val view = BlockOverlayUi.buildLateNightPrompt(
+            context = this,
+            thresholdText = DemoBlockPrefs.formatClockMinutes(settings.thresholdMinutes),
+            wakeText = DemoBlockPrefs.formatClockMinutes(settings.wakeMinutes),
+            onImportant = { task ->
+                DemoBlockPrefs.recordLateNightImportantTask(this, task, window)
+                hideOverlay()
+                showMini("今晚重要：$task")
+            },
+            onSleep = {
+                DemoBlockPrefs.startLateNightSleep(this, window)
+                hideOverlay()
+                goHome()
+            },
+            onSnoozeForTest = {
+                DemoBlockPrefs.snoozeLateNightPromptForTest(this)
+                hideOverlay()
+            },
+        )
+        overlayView = view
+        runCatching {
+            windowManager?.addView(view, fullParams())
+            DemoBlockPrefs.markLateNightPromptShown(this, System.currentTimeMillis(), "floating_late_night_prompt")
+        }.onFailure { error ->
+            overlayView = null
+            overlayPackage = null
+            DemoBlockPrefs.releaseGlobalBreakOverlay(LATE_NIGHT_OVERLAY_OWNER)
+            DemoBlockPrefs.markSkip(this, "floating_late_night_overlay_error:${error.javaClass.simpleName}")
         }
     }
 
@@ -298,6 +345,7 @@ class FloatingReminderService : Service() {
         overlayView = null
         overlayPackage = null
         if (hiddenPackage == GLOBAL_BREAK_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(GLOBAL_OVERLAY_OWNER)
+        if (hiddenPackage == LATE_NIGHT_PACKAGE) DemoBlockPrefs.releaseGlobalBreakOverlay(LATE_NIGHT_OVERLAY_OWNER)
     }
 
     private fun hideMini() {
@@ -348,6 +396,8 @@ class FloatingReminderService : Service() {
     companion object {
         private const val GLOBAL_BREAK_PACKAGE = "__global_screen_break__"
         private const val GLOBAL_OVERLAY_OWNER = "floating"
+        private const val LATE_NIGHT_PACKAGE = "__late_night_prompt__"
+        private const val LATE_NIGHT_OVERLAY_OWNER = "floating_late_night"
         private const val POLL_MS = 250L
         private const val NOTIFICATION_ID = 4301
         const val ACTION_STOP = "dev.stw.blocking.STOP_FLOATING_REMINDER"
