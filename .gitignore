@@ -26,3 +26,10 @@ secrets.properties
 
 # Kotlin compiler local cache
 .kotlin/
+
+# Local AI assistant / private notes
+CLAUDE.md
+.ai/
+
+# Draft docs not published yet
+README.md
