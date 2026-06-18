@@ -35,6 +35,12 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        // When the process/service is killed by the system or battery policy, we miss the screen-off
+        // and screen-on events during that gap. Reusing the old persisted "screenOnSince" can produce
+        // a fake 10+ hour continuous-usage session and show the global rest prompt immediately while
+        // the user is still in Android Accessibility Settings. Treat a fresh service connection as a
+        // new observed screen session instead of trusting stale state.
+        DemoBlockPrefs.resetGlobalScreenSession(this, System.currentTimeMillis(), "accessibility_primary_connected_reset_session")
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         DemoBlockPrefs.markSkip(this, "accessibility_primary_connected")
     }
@@ -85,6 +91,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         hideOverlay()
         hideMini()
+        DemoBlockPrefs.markScreenInteractive(this, false)
         DemoBlockPrefs.markSkip(this, "accessibility_primary_destroyed")
         super.onDestroy()
     }
@@ -314,7 +321,17 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             this.contains("home", ignoreCase = true)
 
     private fun String.isIgnoredGlobalPackage(): Boolean =
-        this == applicationContext.packageName || isSystemTransientPackage()
+        this == applicationContext.packageName ||
+            this == "com.android.settings" ||
+            this == "com.miui.securitycenter" ||
+            this == "com.miui.powerkeeper" ||
+            this == "com.android.permissioncontroller" ||
+            this == "com.google.android.permissioncontroller" ||
+            this == "com.android.packageinstaller" ||
+            this == "com.miui.packageinstaller" ||
+            contains("permissioncontroller", ignoreCase = true) ||
+            contains("packageinstaller", ignoreCase = true) ||
+            isSystemTransientPackage()
 
     private val Int.dp: Int get() = (this * resources.displayMetrics.density).toInt()
 

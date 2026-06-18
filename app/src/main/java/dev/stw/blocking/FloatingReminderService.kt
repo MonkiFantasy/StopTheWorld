@@ -33,6 +33,10 @@ class FloatingReminderService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         DemoBlockPrefs.setFloatingRunning(this, true)
+        // A foreground monitor restart means we had an unobserved gap. Reset the global screen-on
+        // baseline so stale state from a killed process cannot immediately fire a fake long-session
+        // rest prompt.
+        DemoBlockPrefs.resetGlobalScreenSession(this, System.currentTimeMillis(), "floating_service_created_reset_session")
         DemoBlockPrefs.markSkip(this, "floating_service_created")
         startForeground(NOTIFICATION_ID, notification())
         startPolling()
@@ -54,6 +58,7 @@ class FloatingReminderService : Service() {
         hideOverlay()
         hideMini()
         DemoBlockPrefs.setFloatingRunning(this, false)
+        DemoBlockPrefs.markScreenInteractive(this, false)
         super.onDestroy()
     }
 
@@ -320,6 +325,15 @@ class FloatingReminderService : Service() {
 
     private fun String.isIgnoredGlobalPackage(): Boolean =
         this == packageName ||
+            this == "com.android.settings" ||
+            this == "com.miui.securitycenter" ||
+            this == "com.miui.powerkeeper" ||
+            this == "com.android.permissioncontroller" ||
+            this == "com.google.android.permissioncontroller" ||
+            this == "com.android.packageinstaller" ||
+            this == "com.miui.packageinstaller" ||
+            contains("permissioncontroller", ignoreCase = true) ||
+            contains("packageinstaller", ignoreCase = true) ||
             this == "com.android.systemui" ||
             this.contains("launcher", ignoreCase = true) ||
             this.contains("inputmethod", ignoreCase = true) ||

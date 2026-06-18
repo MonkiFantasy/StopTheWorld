@@ -260,6 +260,13 @@ object DemoBlockPrefs {
         return now
     }
 
+    fun resetGlobalScreenSession(context: Context, now: Long = System.currentTimeMillis(), reason: String = "global_screen_session_reset") {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
+            .putString(KEY_LAST_SKIP_REASON, reason)
+            .apply()
+    }
+
     fun globalScreenOnSince(context: Context): Long =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L)
 
