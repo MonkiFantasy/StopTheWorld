@@ -716,7 +716,7 @@ private fun GlobalScreenBreakCard(
         }
         val status = when {
             !settings.enabled -> "未启用"
-            restRemaining > 0L -> "休息中 · 剩余 ${DemoBlockPrefs.compactDuration(restRemaining)}"
+            restRemaining > 0L -> "休息中 · ${settings.restActivity?.let { "计划：$it · " } ?: ""}剩余 ${DemoBlockPrefs.compactDuration(restRemaining)}"
             screenOnElapsed > 0L -> "连续亮屏 ${DemoBlockPrefs.compactDuration(screenOnElapsed)} / ${settings.limitMinutes} 分钟"
             else -> "等待亮屏计时"
         }

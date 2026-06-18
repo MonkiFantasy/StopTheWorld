@@ -29,6 +29,7 @@ object DemoBlockPrefs {
     private const val KEY_GLOBAL_BREAK_REST_OPTIONS = "global_break_rest_options"
     private const val KEY_GLOBAL_SCREEN_ON_SINCE = "global_screen_on_since"
     private const val KEY_GLOBAL_REST_UNTIL = "global_rest_until"
+    private const val KEY_GLOBAL_REST_ACTIVITY = "global_rest_activity"
     private const val KEY_GLOBAL_LAST_OVERLAY_AT = "global_last_overlay_at"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
     private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
@@ -234,6 +235,7 @@ object DemoBlockPrefs {
             restOptionsMinutes = options,
             screenOnSince = prefs.getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L),
             restUntil = prefs.getLong(KEY_GLOBAL_REST_UNTIL, 0L),
+            restActivity = prefs.getString(KEY_GLOBAL_REST_ACTIVITY, null),
         )
     }
 
@@ -261,10 +263,11 @@ object DemoBlockPrefs {
     fun globalScreenOnSince(context: Context): Long =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L)
 
-    fun setGlobalRestUntil(context: Context, untilMillis: Long, now: Long = System.currentTimeMillis()) {
+    fun setGlobalRestUntil(context: Context, untilMillis: Long, now: Long = System.currentTimeMillis(), activity: String? = null) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_GLOBAL_REST_UNTIL, untilMillis)
             .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
+            .putString(KEY_GLOBAL_REST_ACTIVITY, activity?.trim()?.takeIf { it.isNotBlank() })
             .putString(KEY_LAST_SKIP_REASON, "global_rest_until")
             .apply()
     }
@@ -272,6 +275,7 @@ object DemoBlockPrefs {
     fun clearGlobalRestForTest(context: Context, now: Long = System.currentTimeMillis()) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_GLOBAL_REST_UNTIL, 0L)
+            .remove(KEY_GLOBAL_REST_ACTIVITY)
             .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
             .putString(KEY_LAST_SKIP_REASON, "global_rest_skipped_for_test")
             .apply()
@@ -286,6 +290,7 @@ object DemoBlockPrefs {
         if (restUntil in 1..now) {
             prefs.edit()
                 .putLong(KEY_GLOBAL_REST_UNTIL, 0L)
+                .remove(KEY_GLOBAL_REST_ACTIVITY)
                 .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
                 .putString(KEY_LAST_SKIP_REASON, "global_rest_finished")
                 .apply()
@@ -614,6 +619,7 @@ data class GlobalBreakSettings(
     val restOptionsMinutes: List<Int>,
     val screenOnSince: Long,
     val restUntil: Long,
+    val restActivity: String?,
 )
 
 data class PurposeRecord(

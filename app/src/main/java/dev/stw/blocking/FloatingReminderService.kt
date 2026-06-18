@@ -213,9 +213,9 @@ class FloatingReminderService : Service() {
             context = this,
             screenOnMillis = screenOnMillis,
             restOptionsMinutes = restOptionsMinutes,
-            onRest = { minutes ->
+            onRest = { minutes, activity ->
                 val now = System.currentTimeMillis()
-                DemoBlockPrefs.setGlobalRestUntil(this, now + minutes * 60_000L, now)
+                DemoBlockPrefs.setGlobalRestUntil(this, now + minutes * 60_000L, now, activity)
                 hideOverlay()
                 goHome()
             },
@@ -240,6 +240,7 @@ class FloatingReminderService : Service() {
         val view = BlockOverlayUi.buildGlobalRestPrompt(
             context = this,
             remainingMillis = remainingMillis,
+            restActivity = DemoBlockPrefs.globalBreakSettings(this).restActivity,
             onHome = {
                 hideOverlay()
                 goHome()

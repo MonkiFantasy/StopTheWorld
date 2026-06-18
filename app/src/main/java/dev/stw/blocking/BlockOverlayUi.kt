@@ -300,7 +300,7 @@ object BlockOverlayUi {
         context: Context,
         screenOnMillis: Long,
         restOptionsMinutes: List<Int>,
-        onRest: (Int) -> Unit,
+        onRest: (Int, String) -> Unit,
         onSkip: () -> Unit,
     ): View {
         fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
@@ -323,8 +323,15 @@ object BlockOverlayUi {
             setTextColor(fg)
             background = rounded(bg, 18)
             setPadding(10.dp(), 0, 10.dp(), 0)
-            setOnClickListener { onClick() }
+            setOnClickListener { if (isEnabled) onClick() }
         }
+
+        val activityOptions = listOf("喝水", "远眺", "站起来走走", "肩颈拉伸", "闭眼呼吸", "整理桌面")
+        var selectedActivity = activityOptions.first()
+        val activityChips = mutableListOf<TextView>()
+        lateinit var customInput: EditText
+        var customMode = false
+        fun currentActivity(): String = if (customMode) customInput.text?.toString()?.trim()?.takeIf { it.isNotBlank() } ?: "自定义休息" else selectedActivity
 
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -334,13 +341,64 @@ object BlockOverlayUi {
         }
         addText(card, "时停 · 全局屏幕休息", 12f, true, primary)
         addText(card, "该休息一下", 30f, true, textStrong, 10)
-        addText(card, "连续亮屏已超过 ${DemoBlockPrefs.compactDuration(screenOnMillis)}。选一个休息时长，时停会先带你回到主界面。", 15f, false, textBody, 6)
+        addText(card, "你已经连续亮屏 ${DemoBlockPrefs.compactDuration(screenOnMillis)}。先选一个具体休息动作，大脑更容易真的停下来。", 15f, false, textBody, 6)
+        addText(card, "这段休息时间里做什么？", 15f, true, textStrong, 10)
 
+        fun refreshActivityChips() {
+            activityChips.forEach { view ->
+                val raw = view.tag as String
+                val selected = !customMode && raw == selectedActivity
+                view.text = if (selected) "✓ $raw" else raw
+                view.setTextColor(if (selected) onPrimaryContainer else textBody)
+                view.background = rounded(if (selected) primaryContainer else fieldBg, 999)
+            }
+        }
+        activityOptions.chunked(2).forEach { rowItems ->
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 2.dp(), 0, 0) }
+            rowItems.forEach { activity ->
+                val chip = TextView(context).apply {
+                    tag = activity
+                    gravity = Gravity.CENTER
+                    textSize = 13f
+                    setPadding(8.dp(), 8.dp(), 8.dp(), 8.dp())
+                    setOnClickListener {
+                        customMode = false
+                        selectedActivity = activity
+                        refreshActivityChips()
+                    }
+                }
+                activityChips += chip
+                row.addView(chip, LinearLayout.LayoutParams(0, 40.dp(), 1f).apply { setMargins(3.dp(), 3.dp(), 3.dp(), 3.dp()) })
+            }
+            card.addView(row)
+        }
+        refreshActivityChips()
+
+        customInput = EditText(context).apply {
+            hint = "或者输入自己的休息动作"
+            textSize = 13f
+            setSingleLine(true)
+            setPadding(12.dp(), 6.dp(), 12.dp(), 6.dp())
+            background = rounded(fieldBg, 14)
+            setOnFocusChangeListener { _, hasFocus ->
+                if (hasFocus) {
+                    customMode = true
+                    refreshActivityChips()
+                }
+            }
+            setOnClickListener {
+                customMode = true
+                refreshActivityChips()
+            }
+        }
+        card.addView(customInput, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 42.dp()).apply { setMargins(0, 6.dp(), 0, 0) })
+
+        addText(card, "休息多久？", 15f, true, textStrong, 10)
         restOptionsMinutes.ifEmpty { listOf(5, 10, 15) }.chunked(2).forEach { rowItems ->
-            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 4.dp(), 0, 0) }
+            val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 3.dp(), 0, 0) }
             rowItems.forEach { minutes ->
                 row.addView(
-                    button("休息 ${minutes} 分钟", primary, Color.WHITE) { onRest(minutes) },
+                    button("开始休息 ${minutes} 分钟", primary, Color.WHITE) { onRest(minutes, currentActivity()) },
                     LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { setMargins(4.dp(), 4.dp(), 4.dp(), 4.dp()) },
                 )
             }
@@ -348,8 +406,13 @@ object BlockOverlayUi {
             card.addView(row)
         }
 
-        card.addView(button("跳过本次（测试）", primaryContainer, onPrimaryContainer, onSkip), LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 44.dp()).apply { setMargins(0, 10.dp(), 0, 0) })
-        addText(card, "测试按钮会清除本次休息/提醒，并从当前时间重新计算连续亮屏。", 12f, false, textMuted, 8)
+        val skip = button("测试跳过", fieldBg, textMuted, onSkip).apply {
+            visibility = View.GONE
+            alpha = 0.7f
+        }
+        card.addView(skip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 40.dp()).apply { setMargins(0, 10.dp(), 0, 0) })
+        addText(card, "跳过按钮会延迟出现，避免顺手关掉；当前仅用于测试。", 12f, false, textMuted, 8)
+        Handler(context.mainLooper).postDelayed({ skip.visibility = View.VISIBLE }, 2_500L)
 
         val scroller = ScrollView(context).apply { overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS }
         scroller.addView(card, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
@@ -365,6 +428,7 @@ object BlockOverlayUi {
     fun buildGlobalRestPrompt(
         context: Context,
         remainingMillis: Long,
+        restActivity: String?,
         onHome: () -> Unit,
         onSkip: () -> Unit,
     ): View {
@@ -388,7 +452,7 @@ object BlockOverlayUi {
             setTextColor(fg)
             background = rounded(bg, 18)
             setPadding(10.dp(), 0, 10.dp(), 0)
-            setOnClickListener { onClick() }
+            setOnClickListener { if (isEnabled) onClick() }
         }
 
         val card = LinearLayout(context).apply {
@@ -399,12 +463,19 @@ object BlockOverlayUi {
         }
         addText(card, "时停 · 正在休息", 12f, true, primary)
         addText(card, "还要休息 ${DemoBlockPrefs.compactDuration(remainingMillis)}", 26f, true, textStrong, 10)
-        addText(card, "现在打开应用会打断刚才设定的休息。先回到主界面，等休息结束再继续。", 15f, false, textBody, 6)
-        val row = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, 12.dp(), 0, 0) }
-        row.addView(button("回到主界面", primary, Color.WHITE) { onHome() }, LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { rightMargin = 6.dp() })
-        row.addView(button("跳过（测试）", primaryContainer, onPrimaryContainer, onSkip), LinearLayout.LayoutParams(0, 46.dp(), 1f).apply { leftMargin = 6.dp() })
-        card.addView(row)
-        addText(card, "跳过仅用于测试，会立即结束本次休息。", 12f, false, textMuted, 8)
+        restActivity?.takeIf { it.isNotBlank() }?.let {
+            addText(card, "你刚才选择了：$it", 17f, true, onPrimaryContainer, 8)
+        }
+        addText(card, "先完成这个小休息，再回来。把手从手机上拿开会更容易结束自动打开。", 15f, false, textBody, 6)
+        val home = button("回到主界面", primary, Color.WHITE, onHome)
+        card.addView(home, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 46.dp()).apply { setMargins(0, 12.dp(), 0, 0) })
+        val skip = button("测试跳过", fieldBg, textMuted, onSkip).apply {
+            visibility = View.GONE
+            alpha = 0.7f
+        }
+        card.addView(skip, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 40.dp()).apply { setMargins(0, 8.dp(), 0, 0) })
+        addText(card, "跳过会立即结束本次休息，仅建议测试时使用。", 12f, false, textMuted, 8)
+        Handler(context.mainLooper).postDelayed({ skip.visibility = View.VISIBLE }, 2_500L)
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
