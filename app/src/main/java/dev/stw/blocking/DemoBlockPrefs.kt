@@ -37,6 +37,7 @@ object DemoBlockPrefs {
     private const val KEY_LATE_NIGHT_HANDLED_WINDOW_START = "late_night_handled_window_start"
     private const val KEY_LATE_NIGHT_LAST_PROMPT_AT = "late_night_last_prompt_at"
     private const val KEY_LATE_NIGHT_RECORDS = "late_night_records"
+    private const val KEY_OPERATION_LOGS = "operation_logs"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
     private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
     private var activeGlobalOverlayOwner: String? = null
@@ -253,17 +254,20 @@ object DemoBlockPrefs {
             .putInt(KEY_GLOBAL_BREAK_LIMIT_MINUTES, limitMinutes.coerceAtLeast(1))
             .putString(KEY_GLOBAL_BREAK_REST_OPTIONS, cleaned.joinToString("|"))
             .apply()
+        appendLog(context, "info", "global_break_config enabled=$enabled limit=${limitMinutes.coerceAtLeast(1)} rest=${cleaned.joinToString(",")}")
     }
 
     fun markScreenInteractive(context: Context, interactive: Boolean, now: Long = System.currentTimeMillis()): Long {
         val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
         if (!interactive) {
             prefs.edit().putLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L).apply()
+            appendLog(context, "debug", "screen_interactive=false")
             return 0L
         }
         val existing = prefs.getLong(KEY_GLOBAL_SCREEN_ON_SINCE, 0L)
         if (existing > 0L) return existing
         prefs.edit().putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now).apply()
+        appendLog(context, "debug", "screen_interactive=true session_started")
         return now
     }
 
@@ -272,6 +276,7 @@ object DemoBlockPrefs {
             .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
             .putString(KEY_LAST_SKIP_REASON, reason)
             .apply()
+        appendLog(context, "info", reason)
     }
 
     fun globalScreenOnSince(context: Context): Long =
@@ -284,6 +289,7 @@ object DemoBlockPrefs {
             .putString(KEY_GLOBAL_REST_ACTIVITY, activity?.trim()?.takeIf { it.isNotBlank() })
             .putString(KEY_LAST_SKIP_REASON, "global_rest_until")
             .apply()
+        appendLog(context, "notice", "global_rest_until until=${formatLogTime(untilMillis)} activity=${activity?.trim()?.takeIf { it.isNotBlank() } ?: "-"}")
     }
 
     fun clearGlobalRestForTest(context: Context, now: Long = System.currentTimeMillis()) {
@@ -293,6 +299,7 @@ object DemoBlockPrefs {
             .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
             .putString(KEY_LAST_SKIP_REASON, "global_rest_skipped_for_test")
             .apply()
+        appendLog(context, "warn", "global_rest_skipped_for_test")
     }
 
     fun globalRestUntil(context: Context): Long =
@@ -308,6 +315,7 @@ object DemoBlockPrefs {
                 .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, now)
                 .putString(KEY_LAST_SKIP_REASON, "global_rest_finished")
                 .apply()
+            appendLog(context, "info", "global_rest_finished")
         }
     }
 
@@ -359,6 +367,7 @@ object DemoBlockPrefs {
             .putInt(KEY_LATE_NIGHT_WAKE_MINUTES, wakeMinutes.coerceIn(0, 1439))
             .putString(KEY_LAST_SKIP_REASON, if (enabled) "late_night_enabled" else "late_night_disabled")
             .apply()
+        appendLog(context, "info", "late_night_config enabled=$enabled threshold=${formatClockMinutes(thresholdMinutes)} wake=${formatClockMinutes(wakeMinutes)}")
     }
 
     fun currentLateNightWindow(context: Context, now: Long = System.currentTimeMillis()): LateNightWindow? {
@@ -383,6 +392,7 @@ object DemoBlockPrefs {
             .putLong(KEY_LATE_NIGHT_LAST_PROMPT_AT, atMillis)
             .putString(KEY_LAST_SKIP_REASON, source)
             .apply()
+        appendLog(context, "notice", source)
     }
 
     fun recordLateNightImportantTask(
@@ -402,12 +412,14 @@ object DemoBlockPrefs {
             .putLong(KEY_GLOBAL_SCREEN_ON_SINCE, atMillis)
             .putString(KEY_LAST_SKIP_REASON, "late_night_important_recorded")
             .apply()
+        appendLog(context, "notice", "late_night_important_recorded task=$cleaned")
     }
 
     fun startLateNightSleep(context: Context, window: LateNightWindow, now: Long = System.currentTimeMillis()) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_LATE_NIGHT_HANDLED_WINDOW_START, window.startMillis)
             .apply()
+        appendLog(context, "notice", "late_night_sleep_until ${formatLogTime(window.wakeMillis)}")
         setGlobalRestUntil(context, window.wakeMillis, now, "睡觉到 ${formatClockMinutes(lateNightSettings(context).wakeMinutes)}")
     }
 
@@ -416,6 +428,7 @@ object DemoBlockPrefs {
             .putLong(KEY_LATE_NIGHT_LAST_PROMPT_AT, now)
             .putString(KEY_LAST_SKIP_REASON, "late_night_snoozed_for_test")
             .apply()
+        appendLog(context, "warn", "late_night_snoozed_for_test")
     }
 
     fun formatClockMinutes(minutes: Int): String = "%02d:%02d".format((minutes.coerceIn(0, 1439) / 60), (minutes.coerceIn(0, 1439) % 60))
@@ -648,6 +661,7 @@ object DemoBlockPrefs {
             .putBoolean(KEY_FLOATING_RUNNING, running)
             .putString(KEY_LAST_SKIP_REASON, if (running) "floating_monitor_running" else "floating_monitor_stopped")
             .apply()
+        appendLog(context, "info", if (running) "floating_monitor_running" else "floating_monitor_stopped")
     }
 
     fun isFloatingRunning(context: Context): Boolean =
@@ -766,6 +780,7 @@ object DemoBlockPrefs {
             .putLong(KEY_LAST_TRIGGER_AT, atMillis)
             .putString(KEY_LAST_SKIP_REASON, source)
             .apply()
+        appendLog(context, "notice", "block_shown pkg=$packageName source=$source")
     }
 
     fun markBlocked(context: Context, packageName: String, atMillis: Long = System.currentTimeMillis()) {
@@ -780,12 +795,73 @@ object DemoBlockPrefs {
             .putString(KEY_LAST_SEEN_PACKAGE, packageName)
             .putLong(KEY_LAST_SEEN_AT, atMillis)
             .apply()
+        appendLog(context, "debug", "seen_foreground pkg=$packageName")
     }
 
     fun markSkip(context: Context, reason: String) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putString(KEY_LAST_SKIP_REASON, reason)
             .apply()
+        appendLog(context, "debug", "skip reason=$reason")
+    }
+
+    fun operationLogs(context: Context): List<OperationLogEntry> =
+        parseOperationLogs(context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_OPERATION_LOGS, null).orEmpty())
+
+    fun clearOperationLogs(context: Context) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .remove(KEY_OPERATION_LOGS)
+            .putString(KEY_LAST_SKIP_REASON, "operation_logs_cleared")
+            .apply()
+    }
+
+    private fun appendLog(context: Context, level: String, message: String, atMillis: Long = System.currentTimeMillis()) {
+        val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+        val current = parseOperationLogs(prefs.getString(KEY_OPERATION_LOGS, null).orEmpty())
+        val cleanedMessage = message.replace('\n', ' ').take(180)
+        val latest = current.firstOrNull()
+        if (latest != null && latest.level == level && latest.message == cleanedMessage && atMillis - latest.atMillis in 0..10_000L) return
+        val updated = (listOf(OperationLogEntry(atMillis, level, cleanedMessage)) + current).take(160)
+        prefs.edit().putString(KEY_OPERATION_LOGS, encodeOperationLogs(updated)).apply()
+    }
+
+    private fun parseOperationLogs(raw: String): List<OperationLogEntry> = runCatching {
+        if (raw.isBlank()) return@runCatching emptyList()
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val message = obj.optString("message")
+                if (message.isNotBlank()) {
+                    add(
+                        OperationLogEntry(
+                            atMillis = obj.optLong("atMillis", 0L),
+                            level = obj.optString("level", "info"),
+                            message = message,
+                        ),
+                    )
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodeOperationLogs(logs: List<OperationLogEntry>): String = JSONArray().apply {
+        logs.forEach { entry ->
+            put(JSONObject().apply {
+                put("atMillis", entry.atMillis)
+                put("level", entry.level)
+                put("message", entry.message)
+            })
+        }
+    }.toString()
+
+    private fun formatLogTime(millis: Long): String {
+        val calendar = Calendar.getInstance().apply { timeInMillis = millis }
+        return "%02d:%02d:%02d".format(
+            calendar.get(Calendar.HOUR_OF_DAY),
+            calendar.get(Calendar.MINUTE),
+            calendar.get(Calendar.SECOND),
+        )
     }
 
     fun debugState(context: Context): DemoDebugState {
@@ -845,6 +921,12 @@ data class DemoDebugState(
     val lastTriggerAt: Long,
     val lastSkipReason: String?,
     val floatingRunning: Boolean,
+)
+
+data class OperationLogEntry(
+    val atMillis: Long,
+    val level: String,
+    val message: String,
 )
 
 

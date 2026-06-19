@@ -75,6 +75,7 @@ import dev.stw.blocking.DemoDebugState
 import dev.stw.blocking.FloatingReminderService
 import dev.stw.blocking.GlobalBreakSettings
 import dev.stw.blocking.LateNightSettings
+import dev.stw.blocking.OperationLogEntry
 import dev.stw.blocking.RestrictedGroup
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
@@ -111,6 +112,7 @@ private data class HomeSnapshot(
     val dayBoundaryMinutes: Int,
     val globalBreakSettings: GlobalBreakSettings,
     val lateNightSettings: LateNightSettings,
+    val operationLogs: List<OperationLogEntry>,
 )
 
 class MainActivity : ComponentActivity() {
@@ -201,6 +203,7 @@ private fun DemoHome(
     var dayBoundaryError by remember { mutableStateOf<String?>(null) }
     var globalBreakSettings by remember { mutableStateOf(DemoBlockPrefs.globalBreakSettings(context)) }
     var lateNightSettings by remember { mutableStateOf(DemoBlockPrefs.lateNightSettings(context)) }
+    var operationLogs by remember { mutableStateOf(DemoBlockPrefs.operationLogs(context)) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -229,6 +232,7 @@ private fun DemoHome(
                 dayBoundaryMinutes = DemoBlockPrefs.dayBoundaryMinutes(context),
                 globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context),
                 lateNightSettings = DemoBlockPrefs.lateNightSettings(context),
+                operationLogs = DemoBlockPrefs.operationLogs(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -248,6 +252,7 @@ private fun DemoHome(
         dayBoundaryMinutes = snapshot.dayBoundaryMinutes
         globalBreakSettings = snapshot.globalBreakSettings
         lateNightSettings = snapshot.lateNightSettings
+        operationLogs = snapshot.operationLogs
         if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
@@ -463,6 +468,7 @@ private fun DemoHome(
                     TestAndDebugCard(
                         groups = groups,
                         debugState = debugState,
+                        operationLogs = operationLogs,
                         onOpenFirstRestrictedApp = {
                             val pkg = groups.flatMap { it.apps }.firstOrNull()?.packageName
                             val launch = pkg?.let { context.packageManager.getLaunchIntentForPackage(it) }
@@ -472,6 +478,11 @@ private fun DemoHome(
                             }
                         },
                         onRefresh = { refreshTick++ },
+                        onClearLogs = {
+                            DemoBlockPrefs.clearOperationLogs(context)
+                            operationLogs = emptyList()
+                            refreshTick++
+                        },
                     )
                     RuleCard(
                         rule = AppRule(
@@ -1450,21 +1461,54 @@ private fun GroupAppsPanel(
 private fun TestAndDebugCard(
     groups: List<RestrictedGroup>,
     debugState: DemoDebugState,
+    operationLogs: List<OperationLogEntry>,
     onOpenFirstRestrictedApp: () -> Unit,
     onRefresh: () -> Unit,
+    onClearLogs: () -> Unit,
 ) {
     val totalApps = groups.sumOf { it.apps.size }
     SectionCard(containerColor = MaterialTheme.colorScheme.tertiaryContainer) {
         Text("测试与调试", style = MaterialTheme.typography.titleMedium)
         Text("这里是开发测试区，和上面的日常使用/分组配置分开。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Button(onClick = onOpenFirstRestrictedApp, enabled = totalApps > 0, modifier = Modifier.fillMaxWidth()) { Text("稳定测试：从时停打开第一个目标 App", style = MaterialTheme.typography.labelMedium) }
-        OutlinedButton(onClick = onRefresh, modifier = Modifier.fillMaxWidth()) { Text("刷新调试信息", style = MaterialTheme.typography.labelMedium) }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.weight(1f)) { Text("刷新调试", style = MaterialTheme.typography.labelMedium) }
+            OutlinedButton(onClick = onClearLogs, modifier = Modifier.weight(1f)) { Text("清空日志", style = MaterialTheme.typography.labelMedium) }
+        }
         Text("最近检测前台：${debugState.lastSeenPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("检测时间：${if (debugState.lastSeenAt > 0) formatTime(debugState.lastSeenAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("最近触发提醒：${debugState.lastTriggerPackage ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("触发时间：${if (debugState.lastTriggerAt > 0) formatTime(debugState.lastTriggerAt) else "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("最近跳过原因：${debugState.lastSkipReason ?: "无"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("极速监控运行：${if (debugState.floatingRunning) "是" else "否"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        HorizontalDivider()
+        Text("操作日志", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+        Text("类似 Linux 日志，最新在上；用于看监控、弹窗、跳过、配置变化。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (operationLogs.isEmpty()) {
+            Text("暂无日志。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF202126), RoundedCornerShape(14.dp))
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                operationLogs.take(40).forEach { entry ->
+                    val lineColor = when (entry.level.lowercase()) {
+                        "warn" -> Color(0xFFFFD18A)
+                        "notice" -> Color(0xFFAEC6FF)
+                        "debug" -> Color(0xFFB7BAC7)
+                        else -> Color(0xFFE7E8EF)
+                    }
+                    Text(
+                        "${formatTime(entry.atMillis)} stw[${entry.level}]: ${entry.message}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = lineColor,
+                    )
+                }
+            }
+        }
     }
 }
 

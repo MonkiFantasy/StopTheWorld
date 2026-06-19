@@ -1,6 +1,7 @@
 package dev.stw.blocking
 
 import android.accessibilityservice.AccessibilityService
+import android.app.KeyguardManager
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -63,8 +64,10 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         }
 
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        if (!powerManager.isInteractive) {
+        if (!powerManager.isInteractive || isKeyguardLocked()) {
+            hideOverlay()
             DemoBlockPrefs.markScreenInteractive(this, false, now)
+            DemoBlockPrefs.markSkip(this, "screen_locked_or_not_interactive")
             return
         }
         DemoBlockPrefs.markScreenInteractive(this, true, now)
@@ -191,6 +194,12 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             .getOrNull()
             ?.takeIf { it.isNotBlank() }
     }
+
+    private fun isKeyguardLocked(): Boolean =
+        runCatching {
+            val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+            keyguard.isKeyguardLocked || keyguard.isDeviceLocked
+        }.getOrDefault(false)
 
     private fun showOverlay(packageName: String, appLabel: String, source: String) {
         hideOverlay()

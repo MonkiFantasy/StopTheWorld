@@ -2,6 +2,7 @@ package dev.stw.blocking
 
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.KeyguardManager
 import android.app.NotificationManager
 import android.app.Service
 import android.app.usage.UsageEvents
@@ -88,8 +89,10 @@ class FloatingReminderService : Service() {
         }
         val now = System.currentTimeMillis()
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
-        if (!powerManager.isInteractive) {
+        if (!powerManager.isInteractive || isKeyguardLocked()) {
+            hideOverlay()
             DemoBlockPrefs.markScreenInteractive(this, false, now)
+            DemoBlockPrefs.markSkip(this, "screen_locked_or_not_interactive")
             return
         }
         val fg = latestForegroundPackage() ?: run {
@@ -317,6 +320,12 @@ class FloatingReminderService : Service() {
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(home)
     }
+
+    private fun isKeyguardLocked(): Boolean =
+        runCatching {
+            val keyguard = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+            keyguard.isKeyguardLocked || keyguard.isDeviceLocked
+        }.getOrDefault(false)
 
     private fun showMini(intentText: String) {
         hideMini()
