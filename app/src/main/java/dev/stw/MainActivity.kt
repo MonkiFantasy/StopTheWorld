@@ -76,6 +76,7 @@ import dev.stw.blocking.FloatingReminderService
 import dev.stw.blocking.GlobalBreakSettings
 import dev.stw.blocking.LateNightSettings
 import dev.stw.blocking.OperationLogEntry
+import dev.stw.blocking.PopupWhitelistEntry
 import dev.stw.blocking.RestrictedGroup
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
@@ -113,6 +114,7 @@ private data class HomeSnapshot(
     val globalBreakSettings: GlobalBreakSettings,
     val lateNightSettings: LateNightSettings,
     val operationLogs: List<OperationLogEntry>,
+    val popupWhitelistApps: List<PopupWhitelistEntry>,
 )
 
 class MainActivity : ComponentActivity() {
@@ -204,6 +206,7 @@ private fun DemoHome(
     var globalBreakSettings by remember { mutableStateOf(DemoBlockPrefs.globalBreakSettings(context)) }
     var lateNightSettings by remember { mutableStateOf(DemoBlockPrefs.lateNightSettings(context)) }
     var operationLogs by remember { mutableStateOf(DemoBlockPrefs.operationLogs(context)) }
+    var popupWhitelistApps by remember { mutableStateOf(DemoBlockPrefs.popupWhitelistApps(context)) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -233,6 +236,7 @@ private fun DemoHome(
                 globalBreakSettings = DemoBlockPrefs.globalBreakSettings(context),
                 lateNightSettings = DemoBlockPrefs.lateNightSettings(context),
                 operationLogs = DemoBlockPrefs.operationLogs(context),
+                popupWhitelistApps = DemoBlockPrefs.popupWhitelistApps(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -253,6 +257,7 @@ private fun DemoHome(
         globalBreakSettings = snapshot.globalBreakSettings
         lateNightSettings = snapshot.lateNightSettings
         operationLogs = snapshot.operationLogs
+        popupWhitelistApps = snapshot.popupWhitelistApps
         if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
@@ -384,6 +389,21 @@ private fun DemoHome(
                             dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(dayBoundaryMinutes)
                             dayBoundaryError = null
                             showDayBoundaryDialog = true
+                        },
+                    )
+                    PopupWhitelistCard(
+                        whitelistApps = popupWhitelistApps,
+                        usageRows = usageRows,
+                        launchableApps = launchableApps,
+                        onAdd = { packageName, label ->
+                            DemoBlockPrefs.addPopupWhitelistApp(context, packageName, label)
+                            popupWhitelistApps = DemoBlockPrefs.popupWhitelistApps(context)
+                            refreshTick++
+                        },
+                        onRemove = { packageName ->
+                            DemoBlockPrefs.removePopupWhitelistApp(context, packageName)
+                            popupWhitelistApps = DemoBlockPrefs.popupWhitelistApps(context)
+                            refreshTick++
                         },
                     )
                     GlobalScreenBreakCard(
@@ -721,6 +741,56 @@ private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
             labelColor = fg,
         ),
     )
+}
+
+@Composable
+private fun PopupWhitelistCard(
+    whitelistApps: List<PopupWhitelistEntry>,
+    usageRows: List<UsageAppInfo>,
+    launchableApps: List<LaunchableAppInfo>,
+    onAdd: (String, String) -> Unit,
+    onRemove: (String) -> Unit,
+) {
+    var showPicker by remember { mutableStateOf(false) }
+    SectionCard {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text("弹窗白名单", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text("白名单 App 前台运行时不弹出提醒，适合游戏、导航、视频会议等不想被打断的场景。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AssistChip(onClick = { showPicker = true }, label = { Text("添加", style = MaterialTheme.typography.labelSmall) })
+        }
+        if (whitelistApps.isEmpty()) {
+            Text("暂无白名单。添加游戏后，打开游戏时会跳过全局休息、熬夜提醒和目标 App 弹窗。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            whitelistApps.forEach { app ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text(app.label, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(app.packageName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    TextButton(onClick = { onRemove(app.packageName) }) { Text("移除", style = MaterialTheme.typography.labelSmall) }
+                }
+            }
+        }
+    }
+    if (showPicker) {
+        AlertDialog(
+            onDismissRequest = { showPicker = false },
+            title = { Text("添加弹窗白名单", style = MaterialTheme.typography.titleMedium) },
+            text = {
+                RestrictedAppPicker(
+                    usageRows = usageRows,
+                    launchableApps = launchableApps,
+                    currentPackages = whitelistApps.map { it.packageName }.toSet(),
+                    selectedGroupName = "弹窗白名单",
+                    onSelect = { packageName, label -> onAdd(packageName, label) },
+                    onRemove = onRemove,
+                )
+            },
+            confirmButton = { TextButton(onClick = { showPicker = false }) { Text("完成") } },
+        )
+    }
 }
 
 @Composable

@@ -11,6 +11,7 @@ object DemoBlockPrefs {
     private const val KEY_RESTRICTED_PACKAGE = "restricted_package"
     private const val KEY_RESTRICTED_LABEL = "restricted_label"
     private const val KEY_GROUPS = "restricted_groups"
+    private const val KEY_POPUP_WHITELIST = "popup_whitelist"
     private const val KEY_UNLOCK_UNTIL_PREFIX = "unlock_until_"
     private const val KEY_LAST_BLOCK_AT_PREFIX = "last_block_at_"
     private const val KEY_LAST_INTENT_PREFIX = "last_intent_"
@@ -123,6 +124,53 @@ object DemoBlockPrefs {
     }
 
     fun groupForPackage(context: Context, packageName: String): RestrictedGroup? = groups(context).firstOrNull { group -> group.apps.any { it.packageName == packageName } }
+
+    fun popupWhitelistApps(context: Context): List<PopupWhitelistEntry> {
+        val raw = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_POPUP_WHITELIST, null)
+        return raw?.let { parsePopupWhitelist(it) }.orEmpty()
+    }
+
+    fun popupWhitelistPackages(context: Context): Set<String> = popupWhitelistApps(context).map { it.packageName }.toSet()
+
+    fun isPopupWhitelisted(context: Context, packageName: String): Boolean =
+        packageName in popupWhitelistPackages(context)
+
+    fun addPopupWhitelistApp(context: Context, packageName: String, label: String) {
+        val updated = (popupWhitelistApps(context) + PopupWhitelistEntry(packageName, label)).distinctBy { it.packageName }
+        setPopupWhitelistApps(context, updated)
+        appendLog(context, "info", "popup_whitelist_add pkg=$packageName label=$label")
+    }
+
+    fun removePopupWhitelistApp(context: Context, packageName: String) {
+        setPopupWhitelistApps(context, popupWhitelistApps(context).filterNot { it.packageName == packageName })
+        appendLog(context, "info", "popup_whitelist_remove pkg=$packageName")
+    }
+
+    private fun setPopupWhitelistApps(context: Context, apps: List<PopupWhitelistEntry>) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_POPUP_WHITELIST, encodePopupWhitelist(apps))
+            .apply()
+    }
+
+    private fun parsePopupWhitelist(raw: String): List<PopupWhitelistEntry> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val pkg = obj.optString("packageName")
+                if (pkg.isNotBlank()) add(PopupWhitelistEntry(pkg, obj.optString("label", pkg)))
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodePopupWhitelist(apps: List<PopupWhitelistEntry>): String = JSONArray().apply {
+        apps.forEach { app ->
+            put(JSONObject().apply {
+                put("packageName", app.packageName)
+                put("label", app.label)
+            })
+        }
+    }.toString()
 
     fun dayBoundaryMinutes(context: Context): Int =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
@@ -949,6 +997,11 @@ data class RestrictedAppEntry(
     val purposeOptions: List<String> = emptyList(),
     val requireTypedPurpose: Boolean? = null,
     val dailyLimitMinutes: Int = 0,
+)
+
+data class PopupWhitelistEntry(
+    val packageName: String,
+    val label: String,
 )
 
 data class RestrictedGroup(

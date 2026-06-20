@@ -104,6 +104,7 @@ class FloatingReminderService : Service() {
             lastForegroundPackage = fg
             DemoBlockPrefs.markSeen(this, fg)
         }
+        if (skipForPopupWhitelist(fg)) return
         if (checkLateNight(fg, now)) return
         if (checkGlobalBreak(fg, now)) return
 
@@ -120,6 +121,14 @@ class FloatingReminderService : Service() {
         if (!DemoBlockPrefs.canShowBlock(this, fg, now, "fallback_usage_poll")) return
         lastTriggerAt = now
         showOverlay(fg, DemoBlockPrefs.labelForPackage(this, fg) ?: fg, "fallback_usage_poll")
+    }
+
+    private fun skipForPopupWhitelist(packageName: String): Boolean {
+        if (!DemoBlockPrefs.isPopupWhitelisted(this, packageName)) return false
+        hideOverlay()
+        hideMini()
+        DemoBlockPrefs.markSkip(this, "popup_whitelist:$packageName")
+        return true
     }
 
     private fun checkGlobalBreak(fg: String, now: Long): Boolean {

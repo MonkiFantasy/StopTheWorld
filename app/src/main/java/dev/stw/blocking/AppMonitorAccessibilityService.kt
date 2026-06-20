@@ -71,6 +71,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             return
         }
         DemoBlockPrefs.markScreenInteractive(this, true, now)
+        if (skipForPopupWhitelist(seenPackage)) return
         if (checkLateNight(seenPackage, now)) return
         if (checkGlobalBreak(seenPackage, now)) return
 
@@ -125,11 +126,20 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             DemoBlockPrefs.markSkip(this, "accessibility_active_not_target:$packageName")
             return
         }
+        if (skipForPopupWhitelist(packageName)) return
         if (packageName != restricted) {
             DemoBlockPrefs.markSkip(this, "accessibility_active_mismatch:$packageName")
             return
         }
         attemptBlock(packageName, "accessibility_verified")
+    }
+
+    private fun skipForPopupWhitelist(packageName: String): Boolean {
+        if (!DemoBlockPrefs.isPopupWhitelisted(this, packageName)) return false
+        hideOverlay()
+        hideMini()
+        DemoBlockPrefs.markSkip(this, "popup_whitelist:$packageName")
+        return true
     }
 
     private fun checkGlobalBreak(packageName: String, now: Long): Boolean {
@@ -166,6 +176,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     private fun attemptBlock(packageName: String, source: String) {
         val now = System.currentTimeMillis()
+        if (skipForPopupWhitelist(packageName)) return
         if (DemoBlockPrefs.unlockUntil(this, packageName) > now) {
             DemoBlockPrefs.markSkip(this, "accessibility_unlocked_until")
             return
