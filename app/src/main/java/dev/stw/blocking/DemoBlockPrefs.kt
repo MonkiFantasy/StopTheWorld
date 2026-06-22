@@ -787,11 +787,14 @@ object DemoBlockPrefs {
     fun suppressUntil(context: Context, packageName: String): Long =
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getLong(KEY_SUPPRESS_UNTIL_PREFIX + packageName, 0L)
 
-    fun suppressAfterCancel(context: Context, packageName: String, durationMillis: Long = 12_000L) {
+    fun suppressAfterCancel(context: Context, packageName: String, durationMillis: Long = 1_500L) {
         context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
             .putLong(KEY_SUPPRESS_UNTIL_PREFIX + packageName, System.currentTimeMillis() + durationMillis)
+            .remove(KEY_LAST_TRIGGER_PACKAGE)
+            .remove(KEY_LAST_TRIGGER_AT)
             .putString(KEY_LAST_SKIP_REASON, "cancel_suppressed")
             .apply()
+        appendLog(context, "debug", "cancel_suppressed pkg=$packageName duration=${durationMillis}ms")
     }
 
     fun canShowBlock(

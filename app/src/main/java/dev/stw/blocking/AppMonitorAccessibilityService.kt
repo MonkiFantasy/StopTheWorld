@@ -226,8 +226,13 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             intents = DemoBlockPrefs.rankedPurposeOptionsForPackage(this, packageName),
             onCancel = {
                 DemoBlockPrefs.suppressAfterCancel(this, packageName)
+                val keepCurrentTask = isLikelyMultiAppWindow(packageName)
                 hideOverlay()
-                performGlobalAction(GLOBAL_ACTION_HOME)
+                if (keepCurrentTask) {
+                    DemoBlockPrefs.markSkip(this, "cancel_in_multi_window_keep_current_task:$packageName")
+                } else {
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                }
             },
             onContinue = { chosen, addToPreset ->
                 if (addToPreset && !chosen.isNullOrBlank()) DemoBlockPrefs.addPurposePresetForPackage(this, packageName, chosen)
@@ -248,6 +253,19 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             DemoBlockPrefs.markSkip(this, "accessibility_overlay_error:${error.javaClass.simpleName}")
         }
     }
+
+    private fun isLikelyMultiAppWindow(targetPackage: String): Boolean =
+        runCatching {
+            val applicationPackages = windows
+                .orEmpty()
+                .asSequence()
+                .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+                .mapNotNull { it.root?.packageName?.toString()?.takeIf { pkg -> pkg.isNotBlank() } }
+                .filterNot { it == applicationContext.packageName || it.isSystemTransientPackage() }
+                .distinct()
+                .toList()
+            targetPackage in applicationPackages && applicationPackages.any { it != targetPackage }
+        }.getOrDefault(false)
 
     private fun showLateNightPrompt(window: LateNightWindow) {
         hideOverlay()
