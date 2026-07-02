@@ -575,14 +575,14 @@ object BlockOverlayUi {
         }
     }
 
-    fun buildMini(context: Context, intentText: String, onTap: () -> Unit): TextView {
+    fun buildMini(context: Context, intentText: String, collapsed: Boolean = false, onTap: () -> Unit): TextView {
         fun Int.dp(): Int = (this * context.resources.displayMetrics.density).toInt()
         return TextView(context).apply {
-            text = "时停：$intentText"
+            text = if (collapsed) "时" else "时停：$intentText"
             textSize = 13f
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(12.dp(), 8.dp(), 12.dp(), 8.dp())
+            setPadding(if (collapsed) 10.dp() else 12.dp(), 8.dp(), if (collapsed) 10.dp() else 12.dp(), 8.dp())
             background = GradientDrawable().apply { setColor(miniBg); cornerRadius = 999.dp().toFloat() }
             setOnClickListener { onTap() }
         }

@@ -45,6 +45,18 @@
                 android:resource="@xml/app_monitor_accessibility_service" />
         </service>
 
+        <receiver
+            android:name=".widget.UsageWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="dev.stw.widget.REFRESH_USAGE_WIDGET" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/usage_widget_info" />
+        </receiver>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

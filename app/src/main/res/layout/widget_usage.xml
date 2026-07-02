@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center_vertical"
+    android:padding="14dp"
+    android:background="#E2E7FA">
+
+    <TextView
+        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="今日手机使用"
+        android:textColor="#536AA3"
+        android:textStyle="bold"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/widget_duration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="0m"
+        android:textColor="#1B1B1F"
+        android:textStyle="bold"
+        android:textSize="26sp" />
+
+    <TextView
+        android:id="@+id/widget_subtitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="点击刷新 / 打开时停"
+        android:textColor="#394B73"
+        android:textSize="11sp" />
+</LinearLayout>

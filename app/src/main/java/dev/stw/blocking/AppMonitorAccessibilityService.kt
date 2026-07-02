@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -33,6 +34,10 @@ class AppMonitorAccessibilityService : AccessibilityService() {
     private var lastSeenPackage: String? = null
     private var lastSeenWriteAt = 0L
     private var pendingCheck: Runnable? = null
+    private var miniCollapsed = false
+    private var miniText = "有意使用"
+    private var miniX = 0
+    private var miniY = 40
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -66,6 +71,7 @@ class AppMonitorAccessibilityService : AccessibilityService() {
         val powerManager = getSystemService(POWER_SERVICE) as PowerManager
         if (!powerManager.isInteractive || isKeyguardLocked()) {
             hideOverlay()
+            hideMini()
             DemoBlockPrefs.markScreenInteractive(this, false, now)
             DemoBlockPrefs.markSkip(this, "screen_locked_or_not_interactive")
             return
@@ -361,7 +367,13 @@ class AppMonitorAccessibilityService : AccessibilityService() {
 
     private fun showMini(intentText: String) {
         hideMini()
-        val mini = BlockOverlayUi.buildMini(this, intentText) { hideMini() }
+        val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+        if (!powerManager.isInteractive || isKeyguardLocked()) return
+        miniText = intentText
+        val mini = BlockOverlayUi.buildMini(this, intentText, miniCollapsed) {
+            miniCollapsed = !miniCollapsed
+            showMini(miniText)
+        }
         miniView = mini
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -370,10 +382,51 @@ class AppMonitorAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             android.graphics.PixelFormat.TRANSLUCENT,
         ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            y = 40.dp
+            gravity = Gravity.TOP or Gravity.START
+            x = miniX
+            y = miniY
             title = "Stop the World accessibility mini reminder"
         }
+        mini.setOnTouchListener(object : View.OnTouchListener {
+            private var downRawX = 0f
+            private var downRawY = 0f
+            private var startX = 0
+            private var startY = 0
+            private var dragging = false
+            override fun onTouch(v: View, event: MotionEvent): Boolean {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        downRawX = event.rawX
+                        downRawY = event.rawY
+                        startX = params.x
+                        startY = params.y
+                        dragging = false
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = (event.rawX - downRawX).toInt()
+                        val dy = (event.rawY - downRawY).toInt()
+                        if (kotlin.math.abs(dx) > 8 || kotlin.math.abs(dy) > 8) dragging = true
+                        if (dragging) {
+                            params.x = (startX + dx).coerceAtLeast(0)
+                            params.y = (startY + dy).coerceAtLeast(0)
+                            miniX = params.x
+                            miniY = params.y
+                            runCatching { windowManager?.updateViewLayout(v, params) }
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        if (!dragging) {
+                            miniCollapsed = !miniCollapsed
+                            showMini(miniText)
+                        }
+                        return true
+                    }
+                }
+                return true
+            }
+        })
         runCatching { windowManager?.addView(mini, params) }
         handler.postDelayed({ hideMini() }, 5 * 60_000L)
     }

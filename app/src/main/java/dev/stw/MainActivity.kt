@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,8 +66,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextOverflow
 import dev.stw.blocking.AccessibilityStatus
@@ -78,6 +82,7 @@ import dev.stw.blocking.LateNightSettings
 import dev.stw.blocking.OperationLogEntry
 import dev.stw.blocking.PopupWhitelistEntry
 import dev.stw.blocking.RestrictedGroup
+import dev.stw.blocking.TimeTodoEntry
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
 import dev.stw.usage.LaunchableAppInfo
@@ -89,6 +94,7 @@ import dev.stw.usage.formatTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatching {
@@ -115,6 +121,7 @@ private data class HomeSnapshot(
     val lateNightSettings: LateNightSettings,
     val operationLogs: List<OperationLogEntry>,
     val popupWhitelistApps: List<PopupWhitelistEntry>,
+    val timeTodos: List<TimeTodoEntry>,
 )
 
 class MainActivity : ComponentActivity() {
@@ -207,6 +214,7 @@ private fun DemoHome(
     var lateNightSettings by remember { mutableStateOf(DemoBlockPrefs.lateNightSettings(context)) }
     var operationLogs by remember { mutableStateOf(DemoBlockPrefs.operationLogs(context)) }
     var popupWhitelistApps by remember { mutableStateOf(DemoBlockPrefs.popupWhitelistApps(context)) }
+    var timeTodos by remember { mutableStateOf(DemoBlockPrefs.timeTodos(context)) }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var hasAccessibility by remember { mutableStateOf(AccessibilityStatus.isServiceEnabled(context)) }
     var hasFloatingRunning by remember { mutableStateOf(DemoBlockPrefs.isFloatingRunning(context)) }
@@ -237,6 +245,7 @@ private fun DemoHome(
                 lateNightSettings = DemoBlockPrefs.lateNightSettings(context),
                 operationLogs = DemoBlockPrefs.operationLogs(context),
                 popupWhitelistApps = DemoBlockPrefs.popupWhitelistApps(context),
+                timeTodos = DemoBlockPrefs.timeTodos(context),
             )
         }
         hasUsageAccess = snapshot.hasUsageAccess
@@ -258,6 +267,7 @@ private fun DemoHome(
         lateNightSettings = snapshot.lateNightSettings
         operationLogs = snapshot.operationLogs
         popupWhitelistApps = snapshot.popupWhitelistApps
+        timeTodos = snapshot.timeTodos
         if (!showDayBoundaryDialog) dayBoundaryInput = DemoBlockPrefs.formatDayBoundary(snapshot.dayBoundaryMinutes)
     }
 
@@ -403,6 +413,30 @@ private fun DemoHome(
                         onRemove = { packageName ->
                             DemoBlockPrefs.removePopupWhitelistApp(context, packageName)
                             popupWhitelistApps = DemoBlockPrefs.popupWhitelistApps(context)
+                            refreshTick++
+                        },
+                    )
+                    UsageWidgetCard(totalUsageMillis = usageRows.sumOf { it.usedMillis })
+                    TimeTodoCard(
+                        todos = timeTodos,
+                        onAdd = { title, start, end ->
+                            DemoBlockPrefs.addTimeTodo(context, title, start, end)
+                            timeTodos = DemoBlockPrefs.timeTodos(context)
+                            refreshTick++
+                        },
+                        onUpdate = { entry ->
+                            DemoBlockPrefs.updateTimeTodo(context, entry)
+                            timeTodos = DemoBlockPrefs.timeTodos(context)
+                            refreshTick++
+                        },
+                        onToggle = { id ->
+                            DemoBlockPrefs.toggleTimeTodo(context, id)
+                            timeTodos = DemoBlockPrefs.timeTodos(context)
+                            refreshTick++
+                        },
+                        onDelete = { id ->
+                            DemoBlockPrefs.deleteTimeTodo(context, id)
+                            timeTodos = DemoBlockPrefs.timeTodos(context)
                             refreshTick++
                         },
                     )
@@ -741,6 +775,145 @@ private fun StatusChip(label: String, ok: Boolean, onClick: () -> Unit = {}) {
             labelColor = fg,
         ),
     )
+}
+
+@Composable
+private fun UsageWidgetCard(totalUsageMillis: Long) {
+    SectionCard {
+        Text("桌面小组件", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text("已加入一个「今日手机使用」桌面小组件。长按桌面添加小组件即可查看今日总时长。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("今日使用手机", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text(formatDuration(totalUsageMillis), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Black)
+                Text("小组件会在桌面刷新时重新读取 Usage Access 数据。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeTodoCard(
+    todos: List<TimeTodoEntry>,
+    onAdd: (String, Int, Int) -> Unit,
+    onUpdate: (TimeTodoEntry) -> Unit,
+    onToggle: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var title by remember { mutableStateOf("专注任务") }
+    var startText by remember { mutableStateOf("09:00") }
+    var endText by remember { mutableStateOf("10:00") }
+    var error by remember { mutableStateOf<String?>(null) }
+    SectionCard {
+        Text("时间条 Todo", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text("安排/记录一天里的任务时间块；拖动色块可快速调整时间。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(
+            value = title,
+            onValueChange = { title = it.take(40) },
+            label = { Text("任务") },
+            singleLine = true,
+            textStyle = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = startText,
+                onValueChange = { startText = it.take(5); error = null },
+                label = { Text("开始") },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+            OutlinedTextField(
+                value = endText,
+                onValueChange = { endText = it.take(5); error = null },
+                label = { Text("结束") },
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        Button(
+            onClick = {
+                val start = parseClockInput(startText)
+                val end = parseClockInput(endText)
+                when {
+                    start == null || end == null -> error = "请输入 HH:mm，例如 09:30"
+                    end <= start -> error = "结束时间需要晚于开始时间"
+                    else -> {
+                        error = null
+                        onAdd(title, start, end)
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("添加时间块", style = MaterialTheme.typography.labelMedium) }
+        if (todos.isEmpty()) {
+            Text("暂无安排。先添加一个任务，再拖动时间条调整。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            todos.forEach { entry ->
+                TimeTodoRow(entry = entry, onUpdate = onUpdate, onToggle = onToggle, onDelete = onDelete)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeTodoRow(
+    entry: TimeTodoEntry,
+    onUpdate: (TimeTodoEntry) -> Unit,
+    onToggle: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    var draft by remember(entry) { mutableStateOf(entry.normalized()) }
+    var barSize by remember { mutableStateOf(IntSize.Zero) }
+    val primary = MaterialTheme.colorScheme.primary
+    val track = MaterialTheme.colorScheme.surfaceVariant
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    (if (draft.done) "✓ " else "") + draft.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text("${DemoBlockPrefs.formatClockMinutes(draft.startMinutes)}-${DemoBlockPrefs.formatClockMinutes(draft.endMinutes % 1440)} · ${draft.endMinutes - draft.startMinutes} 分钟", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = { onToggle(draft.id) }) { Text(if (draft.done) "撤销" else "完成", style = MaterialTheme.typography.labelSmall) }
+            TextButton(onClick = { onDelete(draft.id) }) { Text("删除", style = MaterialTheme.typography.labelSmall) }
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .onSizeChanged { barSize = it }
+                .pointerInput(draft.id, barSize) {
+                    detectDragGestures(
+                        onDragEnd = { onUpdate(draft) },
+                        onDragCancel = { onUpdate(draft) },
+                    ) { change, dragAmount ->
+                        change.consume()
+                        if (barSize.width <= 0) return@detectDragGestures
+                        val deltaMinutes = ((dragAmount.x / barSize.width.toFloat()) * 1440f / 5f).roundToInt() * 5
+                        if (deltaMinutes != 0) {
+                            val duration = draft.endMinutes - draft.startMinutes
+                            val newStart = (draft.startMinutes + deltaMinutes).coerceIn(0, 1440 - duration)
+                            draft = draft.copy(startMinutes = newStart, endMinutes = newStart + duration).normalized()
+                        }
+                    }
+                },
+        ) {
+            val h = size.height
+            val y = h * 0.35f
+            drawRoundRect(track, topLeft = Offset(0f, y), size = Size(size.width, h * 0.30f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(h, h))
+            val left = size.width * (draft.startMinutes / 1440f)
+            val right = size.width * (draft.endMinutes / 1440f)
+            drawRoundRect(primary, topLeft = Offset(left, y - h * 0.14f), size = Size((right - left).coerceAtLeast(6f), h * 0.58f), cornerRadius = androidx.compose.ui.geometry.CornerRadius(h, h))
+        }
+    }
 }
 
 @Composable

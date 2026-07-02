@@ -39,6 +39,7 @@ object DemoBlockPrefs {
     private const val KEY_LATE_NIGHT_LAST_PROMPT_AT = "late_night_last_prompt_at"
     private const val KEY_LATE_NIGHT_RECORDS = "late_night_records"
     private const val KEY_OPERATION_LOGS = "operation_logs"
+    private const val KEY_TIME_TODOS = "time_todos"
     private const val DEFAULT_INTENTS = "查资料|回复消息|娱乐休息|无聊|逃避任务|其他"
     private const val DEFAULT_REST_OPTIONS = "1|5|10|15"
     private var activeGlobalOverlayOwner: String? = null
@@ -81,9 +82,9 @@ object DemoBlockPrefs {
         val counts = purposeRecords(context)
             .asSequence()
             .filter { it.packageName == packageName }
-            .groupingBy { it.purpose.trim() }
+            .groupingBy { it.purpose.trim().lowercase() }
             .eachCount()
-        return base.sortedWith(compareByDescending<String> { counts[it] ?: 0 }.thenBy { base.indexOf(it) })
+        return base.sortedWith(compareByDescending<String> { counts[it.lowercase()] ?: 0 }.thenBy { base.indexOf(it) })
     }
 
     fun addPurposePresetForPackage(context: Context, packageName: String, purpose: String) {
@@ -168,6 +169,82 @@ object DemoBlockPrefs {
             put(JSONObject().apply {
                 put("packageName", app.packageName)
                 put("label", app.label)
+            })
+        }
+    }.toString()
+
+    fun timeTodos(context: Context): List<TimeTodoEntry> {
+        val raw = context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY_TIME_TODOS, null)
+        return raw?.let { parseTimeTodos(it) }.orEmpty()
+            .sortedWith(compareBy<TimeTodoEntry> { it.startMinutes }.thenBy { it.title })
+    }
+
+    fun addTimeTodo(context: Context, title: String, startMinutes: Int, endMinutes: Int): TimeTodoEntry {
+        val cleanedTitle = title.trim().ifBlank { "未命名安排" }.take(40)
+        val entry = TimeTodoEntry(
+            id = "todo_" + System.currentTimeMillis().toString(36),
+            title = cleanedTitle,
+            startMinutes = startMinutes.coerceIn(0, 1435),
+            endMinutes = endMinutes.coerceIn(5, 1440).coerceAtLeast(startMinutes + 5),
+            done = false,
+        )
+        setTimeTodos(context, timeTodos(context) + entry)
+        appendLog(context, "info", "time_todo_add ${formatClockMinutes(entry.startMinutes)}-${formatClockMinutes(entry.endMinutes % 1440)} $cleanedTitle")
+        return entry
+    }
+
+    fun updateTimeTodo(context: Context, entry: TimeTodoEntry) {
+        setTimeTodos(context, timeTodos(context).map { if (it.id == entry.id) entry.normalized() else it })
+        appendLog(context, "debug", "time_todo_update id=${entry.id}")
+    }
+
+    fun toggleTimeTodo(context: Context, id: String) {
+        setTimeTodos(context, timeTodos(context).map { if (it.id == id) it.copy(done = !it.done) else it })
+        appendLog(context, "info", "time_todo_toggle id=$id")
+    }
+
+    fun deleteTimeTodo(context: Context, id: String) {
+        setTimeTodos(context, timeTodos(context).filterNot { it.id == id })
+        appendLog(context, "info", "time_todo_delete id=$id")
+    }
+
+    private fun setTimeTodos(context: Context, entries: List<TimeTodoEntry>) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+            .putString(KEY_TIME_TODOS, encodeTimeTodos(entries.take(80)))
+            .apply()
+    }
+
+    private fun parseTimeTodos(raw: String): List<TimeTodoEntry> = runCatching {
+        val array = JSONArray(raw)
+        buildList {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val id = obj.optString("id").ifBlank { "todo_$i" }
+                val title = obj.optString("title")
+                if (title.isNotBlank()) {
+                    add(
+                        TimeTodoEntry(
+                            id = id,
+                            title = title,
+                            startMinutes = obj.optInt("startMinutes", 9 * 60),
+                            endMinutes = obj.optInt("endMinutes", 10 * 60),
+                            done = obj.optBoolean("done", false),
+                        ).normalized(),
+                    )
+                }
+            }
+        }
+    }.getOrDefault(emptyList())
+
+    private fun encodeTimeTodos(entries: List<TimeTodoEntry>): String = JSONArray().apply {
+        entries.forEach { entry ->
+            val normalized = entry.normalized()
+            put(JSONObject().apply {
+                put("id", normalized.id)
+                put("title", normalized.title)
+                put("startMinutes", normalized.startMinutes)
+                put("endMinutes", normalized.endMinutes)
+                put("done", normalized.done)
             })
         }
     }.toString()
@@ -1006,6 +1083,20 @@ data class PopupWhitelistEntry(
     val packageName: String,
     val label: String,
 )
+
+data class TimeTodoEntry(
+    val id: String,
+    val title: String,
+    val startMinutes: Int,
+    val endMinutes: Int,
+    val done: Boolean,
+) {
+    fun normalized(): TimeTodoEntry {
+        val start = startMinutes.coerceIn(0, 1435)
+        val end = endMinutes.coerceIn(5, 1440).coerceAtLeast(start + 5).coerceAtMost(1440)
+        return copy(startMinutes = start, endMinutes = end)
+    }
+}
 
 data class RestrictedGroup(
     val id: String,
