@@ -33,6 +33,13 @@ data class PurposeUsageSegment(
     val usedMillis: Long,
 )
 
+data class HourlyUsageBucket(
+    val index: Int,
+    val startMillis: Long,
+    val endMillis: Long,
+    val usedMillis: Long,
+)
+
 class UsageStatsRepository(private val context: Context) {
     private val packageManager = context.packageManager
 
@@ -105,6 +112,67 @@ class UsageStatsRepository(private val context: Context) {
             .take(limit)
     }
 
+
+    fun loadHourlyUsageBuckets(): List<HourlyUsageBucket> {
+        if (!hasUsageAccess()) return emptyList()
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val start = DemoBlockPrefs.currentUsageWindowStartMillis(context)
+        val end = System.currentTimeMillis()
+        val buckets = buildHourlyBuckets(start, end)
+        if (buckets.isEmpty()) return emptyList()
+        val totals = LongArray(buckets.size)
+        val activeSince = mutableMapOf<String, Long>()
+        val event = UsageEvents.Event()
+        val events = usageStatsManager.queryEvents(start, end)
+
+        fun addSession(sessionStartRaw: Long, sessionEndRaw: Long) {
+            val sessionStart = sessionStartRaw.coerceIn(start, end)
+            val sessionEnd = sessionEndRaw.coerceIn(start, end)
+            if (sessionEnd <= sessionStart) return
+            buckets.forEachIndexed { index, bucket ->
+                val overlapStart = maxOf(sessionStart, bucket.startMillis)
+                val overlapEnd = minOf(sessionEnd, bucket.endMillis)
+                if (overlapEnd > overlapStart) totals[index] += overlapEnd - overlapStart
+            }
+        }
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val pkg = event.packageName?.takeIf { it != context.packageName } ?: continue
+            val at = event.timeStamp.coerceIn(start, end)
+            when (event.eventType) {
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> activeSince.putIfAbsent(pkg, at)
+                UsageEvents.Event.ACTIVITY_PAUSED,
+                UsageEvents.Event.ACTIVITY_STOPPED,
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    val since = activeSince.remove(pkg)
+                    if (since != null) addSession(since, at)
+                }
+                UsageEvents.Event.DEVICE_SHUTDOWN -> {
+                    activeSince.toMap().forEach { (_, since) -> addSession(since, at) }
+                    activeSince.clear()
+                }
+            }
+        }
+        activeSince.forEach { (_, since) -> addSession(since, end) }
+
+        return buckets.mapIndexed { index, bucket -> bucket.copy(usedMillis = totals[index]) }
+    }
+
+    private fun buildHourlyBuckets(start: Long, end: Long): List<HourlyUsageBucket> {
+        val dayEnd = maxOf(end, start + 24 * 60 * 60_000L)
+        return buildList {
+            var bucketStart = start
+            var index = 0
+            while (bucketStart < dayEnd && index < 24) {
+                val bucketEnd = minOf(bucketStart + 60 * 60_000L, dayEnd)
+                add(HourlyUsageBucket(index, bucketStart, bucketEnd, 0L))
+                bucketStart = bucketEnd
+                index += 1
+            }
+        }
+    }
 
     fun loadTargetPurposeSegments(packages: Set<String>, limit: Int = 80): List<PurposeUsageSegment> {
         if (!hasUsageAccess() || packages.isEmpty()) return emptyList()

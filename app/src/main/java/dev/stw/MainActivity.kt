@@ -16,6 +16,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,6 +86,7 @@ import dev.stw.blocking.RestrictedGroup
 import dev.stw.blocking.TimeTodoEntry
 import dev.stw.ui.SectionCard
 import dev.stw.ui.StwTheme
+import dev.stw.usage.HourlyUsageBucket
 import dev.stw.usage.LaunchableAppInfo
 import dev.stw.usage.UsageAppInfo
 import dev.stw.usage.UsageStatsRepository
@@ -105,6 +107,7 @@ private fun isIgnoringBatteryOptimizations(context: Context): Boolean = runCatch
 private data class HomeSnapshot(
     val hasUsageAccess: Boolean,
     val usageRows: List<UsageAppInfo>,
+    val hourlyUsageBuckets: List<HourlyUsageBucket>,
     val purposeSegments: List<PurposeUsageSegment>,
     val launchableApps: List<LaunchableAppInfo>,
     val groups: List<RestrictedGroup>,
@@ -197,6 +200,7 @@ private fun DemoHome(
     val repository = remember { UsageStatsRepository(context.applicationContext) }
     var hasUsageAccess by remember { mutableStateOf(false) }
     var usageRows by remember { mutableStateOf<List<UsageAppInfo>>(emptyList()) }
+    var hourlyUsageBuckets by remember { mutableStateOf<List<HourlyUsageBucket>>(emptyList()) }
     var purposeSegments by remember { mutableStateOf<List<PurposeUsageSegment>>(emptyList()) }
     var launchableApps by remember { mutableStateOf<List<LaunchableAppInfo>>(emptyList()) }
     var groups by remember { mutableStateOf(DemoBlockPrefs.groups(context)) }
@@ -229,6 +233,7 @@ private fun DemoHome(
             HomeSnapshot(
                 hasUsageAccess = repository.hasUsageAccess(),
                 usageRows = repository.loadTodayUsage(limit = 200),
+                hourlyUsageBuckets = repository.loadHourlyUsageBuckets(),
                 purposeSegments = repository.loadTargetPurposeSegments(DemoBlockPrefs.restrictedPackages(context), limit = 120),
                 launchableApps = repository.loadLaunchableApps(),
                 groups = DemoBlockPrefs.groups(context),
@@ -250,6 +255,7 @@ private fun DemoHome(
         }
         hasUsageAccess = snapshot.hasUsageAccess
         usageRows = snapshot.usageRows
+        hourlyUsageBuckets = snapshot.hourlyUsageBuckets
         purposeSegments = snapshot.purposeSegments
         launchableApps = snapshot.launchableApps
         groups = snapshot.groups
@@ -516,7 +522,7 @@ private fun DemoHome(
                     },
                 )
                 2 -> {
-                    UsageStatsOverviewCard(usageRows = usageRows, groups = groups, purposeSegments = purposeSegments)
+                    UsageStatsOverviewCard(usageRows = usageRows, hourlyUsageBuckets = hourlyUsageBuckets, groups = groups, purposeSegments = purposeSegments)
                 }
                 3 -> {
                     TestAndDebugCard(
@@ -1134,10 +1140,11 @@ private fun IntentConfigCard(
 @Composable
 private fun UsageStatsOverviewCard(
     usageRows: List<UsageAppInfo>,
+    hourlyUsageBuckets: List<HourlyUsageBucket>,
     groups: List<RestrictedGroup>,
     purposeSegments: List<PurposeUsageSegment>,
 ) {
-    var mode by remember { mutableStateOf("app") }
+    var mode by remember { mutableStateOf("time") }
     var appSort by remember { mutableStateOf("time_desc") }
     val totalPhoneUsage = remember(usageRows) { usageRows.sumOf { it.usedMillis } }
     val sortedUsageRows = remember(usageRows, appSort) {
@@ -1169,11 +1176,14 @@ private fun UsageStatsOverviewCard(
         }
         Text("今日使用手机时长：${formatDuration(totalPhoneUsage)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            AssistChip(onClick = { mode = "time" }, label = { Text(if (mode == "time") "✓ 分时段" else "分时段") })
             AssistChip(onClick = { mode = "app" }, label = { Text(if (mode == "app") "✓ 分应用" else "分应用") })
             AssistChip(onClick = { mode = "group" }, label = { Text(if (mode == "group") "✓ 分组" else "分组") })
             AssistChip(onClick = { mode = "purpose" }, label = { Text(if (mode == "purpose") "✓ 目的时段" else "目的时段") })
         }
-        if (mode == "purpose") {
+        if (mode == "time") {
+            HourlyUsageChart(hourlyUsageBuckets)
+        } else if (mode == "purpose") {
             PurposeSegmentsList(purposeSegments)
         } else if (mode == "group") {
             if (groupRows.isEmpty()) {
@@ -1254,6 +1264,94 @@ private data class GroupUsageRow(
     val usedMillis: Long,
     val openCount: Int,
 )
+
+@Composable
+private fun HourlyUsageChart(buckets: List<HourlyUsageBucket>) {
+    var selectedIndex by remember(buckets) { mutableIntStateOf(buckets.indexOfLast { it.usedMillis > 0L }.coerceAtLeast(0)) }
+    val selected = buckets.getOrNull(selectedIndex)
+    val maxUsed = buckets.maxOfOrNull { it.usedMillis }?.coerceAtLeast(1L) ?: 1L
+    val primary = MaterialTheme.colorScheme.primary
+    val selectedColor = MaterialTheme.colorScheme.tertiary
+    val muted = MaterialTheme.colorScheme.surfaceVariant
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("分时段使用频率图", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+        Text("点击柱子查看该时段使用时长；柱高代表该时段前台使用总时长。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (buckets.isEmpty()) {
+            Text("暂无时段数据。请确认 Usage Access 已授权。", style = MaterialTheme.typography.bodySmall)
+            return@Column
+        }
+        selected?.let {
+            Text(
+                "${formatTime(it.startMillis)}-${formatTime(it.endMillis)} · 使用 ${formatDuration(it.usedMillis)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .pointerInput(buckets) {
+                    detectTapGestures { offset ->
+                        if (buckets.isNotEmpty() && size.width > 0) {
+                            selectedIndex = ((offset.x / size.width) * buckets.size)
+                                .toInt()
+                                .coerceIn(0, buckets.lastIndex)
+                        }
+                    }
+                },
+        ) {
+            val topPadding = size.height * 0.10f
+            val labelSpace = size.height * 0.22f
+            val chartHeight = size.height - topPadding - labelSpace
+            val slotWidth = size.width / buckets.size
+            buckets.forEachIndexed { index, bucket ->
+                val normalized = bucket.usedMillis.toFloat() / maxUsed.toFloat()
+                val barHeight = (chartHeight * normalized).coerceAtLeast(if (bucket.usedMillis > 0L) 3f else 1f)
+                val barWidth = (slotWidth * 0.58f).coerceAtLeast(3f)
+                val left = index * slotWidth + (slotWidth - barWidth) / 2f
+                val top = topPadding + chartHeight - barHeight
+                val color = when {
+                    index == selectedIndex -> selectedColor
+                    bucket.usedMillis > 0L -> primary
+                    else -> muted
+                }
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(left, top),
+                    size = Size(barWidth, barHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2f, barWidth / 2f),
+                )
+                if (index == selectedIndex) {
+                    drawLine(
+                        color = selectedColor,
+                        start = Offset(index * slotWidth + slotWidth / 2f, topPadding),
+                        end = Offset(index * slotWidth + slotWidth / 2f, topPadding + chartHeight),
+                        strokeWidth = 2f,
+                        alpha = 0.35f,
+                    )
+                }
+            }
+            val markerIndexes = listOf(0, buckets.size / 4, buckets.size / 2, buckets.size * 3 / 4, buckets.lastIndex).distinct()
+            markerIndexes.forEach { index ->
+                val x = index * slotWidth + slotWidth / 2f
+                drawLine(
+                    color = labelColor,
+                    start = Offset(x, topPadding + chartHeight + 4f),
+                    end = Offset(x, topPadding + chartHeight + 10f),
+                    strokeWidth = 1.5f,
+                    alpha = 0.55f,
+                )
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatTime(buckets.first().startMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(formatTime(buckets.last().endMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
 
 
 @OptIn(ExperimentalFoundationApi::class)
